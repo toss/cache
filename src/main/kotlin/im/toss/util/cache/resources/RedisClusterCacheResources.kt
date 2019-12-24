@@ -15,12 +15,12 @@ import io.lettuce.core.codec.ByteArrayCodec
 class RedisClusterCacheResources(
     private val client: RedisClusterClient
 ) : CacheResources {
-    private fun ensureConnection(): StatefulRedisClusterConnection<ByteArray, ByteArray> {
-        return client.connect(ByteArrayCodec())
+    private val connection by lazy {
+        client.connect(ByteArrayCodec())
     }
 
     private fun commands(): RedisAdvancedClusterReactiveCommands<ByteArray, ByteArray> {
-        return ensureConnection().reactive()
+        return connection.reactive()
     }
 
     override fun keyValueRepository(): KeyValueRepository {
