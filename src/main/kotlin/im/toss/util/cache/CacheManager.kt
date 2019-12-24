@@ -3,6 +3,7 @@ package im.toss.util.cache
 import im.toss.util.cache.resources.RedisClusterCacheResources
 import im.toss.util.data.serializer.Serializer
 import im.toss.util.cache.metrics.metrics
+import im.toss.util.cache.resources.InMemoryCacheResources
 import io.lettuce.core.cluster.RedisClusterClient
 import io.micrometer.core.instrument.MeterRegistry
 import java.util.concurrent.ConcurrentHashMap
@@ -118,6 +119,10 @@ class CacheManager(
             cacheManager.addResource(resourceId,
                 RedisClusterCacheResources(block())
             )
+        }
+
+        fun inMemory(resourceId: String = "default") {
+            cacheManager.addResource(resourceId, InMemoryCacheResources())
         }
 
         fun serializer(id: String = "default", block: () -> Serializer) {

@@ -11,23 +11,7 @@ open class Cache(override val name: String) : CacheMeter {
         val function: (name: String, version: String, key: Any) -> String
     )
 
-    companion object {
-        private val random = Random(System.currentTimeMillis())
 
-        @JvmStatic
-        protected suspend fun <T:Any> runOrRetry(fetch: (suspend () -> T)): T {
-            var retryInterval = 3L
-            while(true) {
-                try {
-                    return fetch()
-                } catch (e: MutexLock.FailedAcquireException) {
-                    val interval = random.nextLong(retryInterval, retryInterval * 2)
-                    retryInterval++
-                    delay(interval)
-                }
-            }
-        }
-    }
 
     override val missCount: Long get() = _missCount.get()
     override val hitCount: Long get() = _hitCount.get()
