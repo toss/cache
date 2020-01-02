@@ -115,14 +115,22 @@ class CacheManager(
             cacheManager.setKeyFunction(Cache.KeyFunction(block))
         }
 
-        fun redisCluster(resourceId: String = "default", block: () -> RedisClusterClient) {
+        fun redisCluster(
+            resourceId: String = "default",
+            readTimeoutMillis: Long = 3000,
+            block: () -> RedisClusterClient
+        ) {
             cacheManager.addResource(resourceId,
-                RedisClusterCacheResources(block())
+                RedisClusterCacheResources(readTimeoutMillis = readTimeoutMillis, client = block())
             )
         }
 
-        fun inMemory(resourceId: String = "default") {
-            cacheManager.addResource(resourceId, InMemoryCacheResources())
+        fun inMemory(
+            resourceId: String = "default"
+        ) {
+            cacheManager.addResource(resourceId,
+                InMemoryCacheResources()
+            )
         }
 
         fun serializer(id: String = "default", block: () -> Serializer) {

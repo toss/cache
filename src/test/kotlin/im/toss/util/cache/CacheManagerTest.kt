@@ -32,7 +32,6 @@ internal class CacheManagerTest {
                     TimeUnit.SECONDS,
                     10,
                     TimeUnit.SECONDS,
-                    readTimeout = 1000,
                     cacheFailurePolicy = CacheFailurePolicy.FallbackToOrigin
                 )
             )
@@ -63,7 +62,6 @@ internal class CacheManagerTest {
                     TimeUnit.SECONDS,
                     10,
                     TimeUnit.SECONDS,
-                    readTimeout = 1000,
                     cacheFailurePolicy = CacheFailurePolicy.FallbackToOrigin
                 )
             )

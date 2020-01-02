@@ -43,7 +43,7 @@ class KeyValueCache<TKey: Any>(
     }
 
     private suspend fun <T: Any> loadToCache(key: TKey, fetch: (suspend () -> T)): T {
-        return lock.run(keys.fetchKey(key), options.readTimeout) {
+        return lock.run(keys.fetchKey(key)) {
             setNotEvicted(key)
             val fetched = fetch()
             if (isNotEvicted(key)) {
@@ -119,7 +119,7 @@ class KeyValueCache<TKey: Any>(
     }
 
     private suspend fun <T> readFromCache(key: TKey): T? {
-        val cachedData = runWithTimeout(options.readTimeout) { repository.get(keys.key(key)) }
+        val cachedData = repository.get(keys.key(key))
         return if (cachedData == null) {
             null
         } else {

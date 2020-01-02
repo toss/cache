@@ -1,5 +1,6 @@
 package im.toss.util.concurrent.lock
 
+import im.toss.util.coroutine.runWithTimeout
 import im.toss.util.redis.SetNEX
 import io.lettuce.core.cluster.api.reactive.RedisAdvancedClusterReactiveCommands
 import kotlinx.coroutines.reactive.awaitSingle
@@ -8,6 +9,7 @@ import kotlin.math.max
 
 class RedisMutexLock(
     private val autoreleaseSeconds: Long,
+    private val readTimeoutMillis: Long,
     private val commands: RedisAdvancedClusterReactiveCommands<ByteArray, ByteArray>
 ) : MutexLock() {
     private val setNEX = SetNEX(commands)
@@ -22,19 +24,25 @@ class RedisMutexLock(
             else -> max(1L, timeUnit.toSeconds(timeout))
         }
 
-        return if (ttl > 0) {
-            setNEX.exec(rkey, ttl, value)
-        } else {
-            commands.setnx(rkey, value).awaitSingle()
+        return runWithTimeout(readTimeoutMillis) {
+            if (ttl > 0) {
+                setNEX.exec(rkey, ttl, value)
+            } else {
+                commands.setnx(rkey, value).awaitSingle()
+            }
         }
     }
 
     override suspend fun release(key: String): Boolean {
-        return commands.del(rawKey(key)).awaitSingle() == 1L
+        return runWithTimeout(readTimeoutMillis) {
+            commands.del(rawKey(key)).awaitSingle() == 1L
+        }
     }
 
     override suspend fun isAcquired(key: String): Boolean {
-        return commands.exists(rawKey(key)).awaitSingle() == 1L
+        return runWithTimeout(readTimeoutMillis) {
+            commands.exists(rawKey(key)).awaitSingle() == 1L
+        }
     }
 
     private fun rawKey(key: String) = "$key:lock".toByteArray()

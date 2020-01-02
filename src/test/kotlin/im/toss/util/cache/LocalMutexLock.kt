@@ -4,7 +4,7 @@ import im.toss.util.concurrent.lock.MutexLock
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
-class LocalMutexLock(private val timeoutMillis:Long) : MutexLock() {
+class LocalMutexLock(private val timeoutMillis: Long) : MutexLock() {
     private val items = ConcurrentHashMap<String, Long>()
     override suspend fun acquire(key: String, timeout: Long, timeUnit: TimeUnit): Boolean {
         synchronized(this) {

@@ -2,6 +2,7 @@ package im.toss.util.cache
 
 import im.toss.test.equalsTo
 import im.toss.util.concurrent.lock.MutexLock
+import im.toss.util.coroutine.runWithTimeout
 import im.toss.util.data.serializer.StringSerializer
 import im.toss.util.repository.KeyFieldValueRepository
 import io.mockk.*
@@ -17,7 +18,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.system.measureTimeMillis
 
 class MultiFieldCacheTest {
-    private fun testCache(repository: KeyFieldValueRepository? = null, ttl:Long = 100L, coldTime: Long = 0L, applyTtlIfHit: Boolean = true, mutexLock: MutexLock = LocalMutexLock(5000), readTimeout: Long = -1L, failurePolicy: CacheFailurePolicy = CacheFailurePolicy.ThrowException) = MultiFieldCache<String>(
+    private fun testCache(repository: KeyFieldValueRepository? = null, ttl:Long = 100L, coldTime: Long = 0L, applyTtlIfHit: Boolean = true, mutexLock: MutexLock = LocalMutexLock(5000), failurePolicy: CacheFailurePolicy = CacheFailurePolicy.ThrowException) = MultiFieldCache<String>(
         name = "dict_cache",
         keyFunction = Cache.KeyFunction { name, version, key -> "$name.$version:{$key}" },
         lock = mutexLock,
@@ -29,7 +30,6 @@ class MultiFieldCacheTest {
             coldTime = coldTime,
             coldTimeUnit = TimeUnit.MILLISECONDS,
             applyTtlIfHit = applyTtlIfHit,
-            readTimeout = readTimeout,
             cacheFailurePolicy = failurePolicy
         )
     )
@@ -504,15 +504,17 @@ class MultiFieldCacheTest {
     }
 
     @Test
-    fun `cacheFailurePolicy가 fallbackToOrigin일때, load시 Mutex가 acquire가 오랜시간 응답하지 않는경우, 캐시 로딩이 무시된다`() {
+    fun `cacheFailurePolicy가 fallbackToOrigin일때, load시 Mutex가 acquire에서 timeout이 발생하는경우, 캐시 로딩이 무시된다`() {
         runBlocking {
             val mutexLock = mockk<MutexLock>(relaxed = true)
             coEvery { mutexLock.acquire(any(), any(), any()) } coAnswers {
-                delay(10000) // long delay
-                true
+                runWithTimeout(50) {
+                    delay(10000) // long delay
+                    true
+                }
             }
 
-            val cache = testCache(mutexLock = mutexLock, readTimeout = 100, failurePolicy = CacheFailurePolicy.FallbackToOrigin)
+            val cache = testCache(mutexLock = mutexLock, failurePolicy = CacheFailurePolicy.FallbackToOrigin)
 
             withTimeout(1000) {
                 cache.load("key", "field") { "hello" }
@@ -542,15 +544,17 @@ class MultiFieldCacheTest {
     }
 
     @Test
-    fun `cacheFailurePolicy가 fallbackToOrigin일때, load시 repository가 오랜시간 응답하지 않는경우, 캐시 로딩이 무시된다`() {
+    fun `cacheFailurePolicy가 fallbackToOrigin일때, load시 repository에서 timeout이 발생하는경우, 캐시 로딩이 무시된다`() {
         runBlocking {
             val mutexLock = mockk<MutexLock>(relaxed = true)
             coEvery { mutexLock.acquire(any(), any(), any()) } coAnswers {
-                delay(10000) // long delay
-                true
+                runWithTimeout(50) {
+                    delay(10000) // long delay
+                    true
+                }
             }
 
-            val cache = testCache(mutexLock = mutexLock, readTimeout = 100, failurePolicy = CacheFailurePolicy.FallbackToOrigin)
+            val cache = testCache(mutexLock = mutexLock, failurePolicy = CacheFailurePolicy.FallbackToOrigin)
 
             withTimeout(1000) {
                 cache.load("key", "field") { "hello" }
@@ -604,21 +608,27 @@ class MultiFieldCacheTest {
     }
 
     @Test
-    fun `cacheFailurePolicy가 fallbackToOrigin일때, get시 repository에서 오랜시간 응답하지 않으면, null이 반환된다`() {
+    fun `cacheFailurePolicy가 fallbackToOrigin일때, get시 repository에서 timeout이 발생하면, null이 반환된다`() {
         runBlocking {
             val repository = mockk<KeyFieldValueRepository>(relaxed = true)
             coEvery { repository.get(any(), any()) } coAnswers {
-                delay(10000)
-                "delayValue".toByteArray()
+                runWithTimeout(50) {
+                    delay(10000)
+                    "delayValue".toByteArray()
+                }
             }
             coEvery { repository.set(any(), any(), any(), any(), any()) } coAnswers {
-                delay(10000)
+                runWithTimeout(50) {
+                    delay(10000)
+                }
             }
             coEvery { repository.expire(any(), any(), any()) } coAnswers {
-                delay(10000)
+                runWithTimeout(50) {
+                    delay(10000)
+                }
             }
 
-            val cache = testCache(repository = repository, readTimeout = 200, failurePolicy = CacheFailurePolicy.FallbackToOrigin)
+            val cache = testCache(repository = repository, failurePolicy = CacheFailurePolicy.FallbackToOrigin)
 
             val result = cache.get<String>("key", "field")
             println(result)
