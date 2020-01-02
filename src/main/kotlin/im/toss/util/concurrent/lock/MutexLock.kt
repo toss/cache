@@ -28,15 +28,15 @@ suspend fun <T> runOrRetry(fetch: (suspend () -> T)): T {
     }
 }
 
-suspend fun <T> MutexLock.run(key: String, timeout: Long, block: suspend () -> T): T {
-    return runWithTimeout(timeout) {
-        if (!acquire(key)) {
-            throw MutexLock.FailedAcquireException
-        }
-        try {
+suspend fun <T> MutexLock.run(key: String, timeout: Long = -1, block: suspend () -> T): T {
+    if (!acquire(key)) {
+        throw MutexLock.FailedAcquireException
+    }
+    return try {
+        runWithTimeout(timeout) {
             block()
-        } finally {
-            release(key)
         }
+    } finally {
+        release(key)
     }
 }

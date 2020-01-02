@@ -45,7 +45,7 @@ class MultiFieldCache<TKey: Any>(
     }
 
     private suspend fun <T: Any> loadToCache(key: TKey, field: String, fetch: (suspend () -> T)): T {
-        return lock.run(keys.fetchKey(key, field), options.readTimeout) {
+        return lock.run(keys.fetchKey(key, field)) {
             setNotEvicted(key, field)
             val fetched = fetch()
             if (isNotEvicted(key, field)) {
@@ -120,7 +120,7 @@ class MultiFieldCache<TKey: Any>(
     }
 
     private suspend fun <T> readFromCache(key: TKey, field: String): T? {
-        val cachedData = runWithTimeout(options.readTimeout) { repository.get(keys.key(key), field) }
+        val cachedData = repository.get(keys.key(key), field)
         return if (cachedData == null) {
             null
         } else {

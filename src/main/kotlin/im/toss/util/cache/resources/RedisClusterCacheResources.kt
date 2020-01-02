@@ -13,6 +13,7 @@ import io.lettuce.core.cluster.api.reactive.RedisAdvancedClusterReactiveCommands
 import io.lettuce.core.codec.ByteArrayCodec
 
 class RedisClusterCacheResources(
+    private val readTimeoutMillis: Long,
     private val client: RedisClusterClient
 ) : CacheResources {
     private val connection by lazy {
@@ -24,14 +25,14 @@ class RedisClusterCacheResources(
     }
 
     override fun keyValueRepository(): KeyValueRepository {
-        return RedisKeyValueRepository(commands())
+        return RedisKeyValueRepository(readTimeoutMillis, commands())
     }
 
     override fun keyFieldValueRepository(): KeyFieldValueRepository {
-        return RedisKeyFieldValueRepository(commands())
+        return RedisKeyFieldValueRepository(readTimeoutMillis, commands())
     }
 
     override fun lock(autoReleaseSeconds: Long): MutexLock {
-        return RedisMutexLock(autoReleaseSeconds, commands())
+        return RedisMutexLock(autoReleaseSeconds, readTimeoutMillis, commands())
     }
 }

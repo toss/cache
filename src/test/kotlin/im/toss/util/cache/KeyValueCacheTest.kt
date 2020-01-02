@@ -2,6 +2,7 @@ package im.toss.util.cache
 
 import im.toss.test.equalsTo
 import im.toss.util.concurrent.lock.MutexLock
+import im.toss.util.coroutine.runWithTimeout
 import im.toss.util.data.serializer.StringSerializer
 import im.toss.util.repository.KeyValueRepository
 import io.mockk.*
@@ -22,7 +23,6 @@ class KeyValueCacheTest {
         coldTime: Long = 0L,
         applyTtlIfHit: Boolean = true,
         mutexLock: MutexLock = LocalMutexLock(5000),
-        readTimeout: Long = -1,
         failurePolicy: CacheFailurePolicy = CacheFailurePolicy.ThrowException
     ) = KeyValueCache<String>(
         name = "dict_cache",
@@ -36,7 +36,6 @@ class KeyValueCacheTest {
             coldTime = coldTime,
             coldTimeUnit = TimeUnit.MILLISECONDS,
             applyTtlIfHit = applyTtlIfHit,
-            readTimeout = readTimeout,
             cacheFailurePolicy = failurePolicy
         )
     )
@@ -453,15 +452,17 @@ class KeyValueCacheTest {
     }
 
     @Test
-    fun `cacheFailurePolicy가 fallbackToOrigin일때, load시 Mutex가 acquire가 오랜시간 응답하지 않는경우, 캐시 로딩이 무시된다`() {
+    fun `cacheFailurePolicy가 fallbackToOrigin일때, load시 timeout이 되는경우, 캐시 로딩이 무시된다`() {
         runBlocking {
             val mutexLock = mockk<MutexLock>(relaxed = true)
             coEvery { mutexLock.acquire(any(), any(), any()) } coAnswers {
-                delay(10000) // long delay
-                true
+                runWithTimeout(50) {
+                    delay(10000) // long delay
+                    true
+                }
             }
 
-            val cache = testCache(mutexLock = mutexLock, readTimeout = 100, failurePolicy = CacheFailurePolicy.FallbackToOrigin)
+            val cache = testCache(mutexLock = mutexLock, failurePolicy = CacheFailurePolicy.FallbackToOrigin)
 
             withTimeout(1000) {
                 cache.load("key") { "hello" }
@@ -491,15 +492,17 @@ class KeyValueCacheTest {
     }
 
     @Test
-    fun `cacheFailurePolicy가 fallbackToOrigin일때, load시 repository가 오랜시간 응답하지 않는경우, 캐시 로딩이 무시된다`() {
+    fun `cacheFailurePolicy가 fallbackToOrigin일때, load시 repository에서 timeout이 발생하는경우, 캐시 로딩이 무시된다`() {
         runBlocking {
             val mutexLock = mockk<MutexLock>(relaxed = true)
             coEvery { mutexLock.acquire(any(), any(), any()) } coAnswers {
-                delay(10000) // long delay
-                true
+                runWithTimeout(50) {
+                    delay(10000) // long delay
+                    true
+                }
             }
 
-            val cache = testCache(mutexLock = mutexLock, readTimeout = 100, failurePolicy = CacheFailurePolicy.FallbackToOrigin)
+            val cache = testCache(mutexLock = mutexLock, failurePolicy = CacheFailurePolicy.FallbackToOrigin)
 
             withTimeout(1000) {
                 cache.load("key") { "hello" }
@@ -553,25 +556,42 @@ class KeyValueCacheTest {
     }
 
     @Test
-    fun `cacheFailurePolicy가 fallbackToOrigin일때, get시 repository에서 오랜시간 응답하지 않으면, null이 반환된다`() {
+    fun `cacheFailurePolicy가 fallbackToOrigin일때, get시 repository에서 timeout이 발생하면, null이 반환된다`() {
         runBlocking {
             val repository = mockk<KeyValueRepository>(relaxed = true)
             coEvery { repository.get(any()) } coAnswers {
-                delay(10000)
-                "delayValue".toByteArray()
+                runWithTimeout(50) {
+                    delay(10000)
+                    "delayValue".toByteArray()
+                }
             }
             coEvery { repository.set(any(), any(), any(), any()) } coAnswers {
-                delay(10000)
+                runWithTimeout(50) {
+                    delay(10000)
+                }
             }
             coEvery { repository.expire(any(), any(), any()) } coAnswers {
-                delay(10000)
+                runWithTimeout(50) {
+                    delay(10000)
+                }
             }
 
-            val cache = testCache(repository = repository, readTimeout = 200, failurePolicy = CacheFailurePolicy.FallbackToOrigin)
+            val cache = testCache(repository = repository, failurePolicy = CacheFailurePolicy.FallbackToOrigin)
 
             val result = cache.get<String>("key")
             println(result)
             result equalsTo null
+        }
+    }
+
+    @Test
+    fun `origin이 delay되어도 timeout이 되지 않는다`() {
+        runBlocking {
+            val cache = testCache(ttl = 100)
+            cache.getOrLoad("key") {
+                delay(1000)
+                "origin"
+            } equalsTo "origin"
         }
     }
 }

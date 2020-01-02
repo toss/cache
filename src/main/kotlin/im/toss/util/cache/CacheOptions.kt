@@ -14,7 +14,6 @@ class CacheOptions(
     var coldTimeUnit: TimeUnit = TimeUnit.SECONDS
     var evictCheckTTL: Long = 30L
     var evictCheckTimeUnit: TimeUnit = TimeUnit.SECONDS
-    var readTimeout: Long = -1
 }
 
 fun cacheOptions(
@@ -27,7 +26,6 @@ fun cacheOptions(
     coldTimeUnit: TimeUnit? = null,
     evictCheckTTL: Long? = null,
     evictCheckTimeUnit: TimeUnit? = null,
-    readTimeout: Long? = null,
     cacheFailurePolicy: CacheFailurePolicy? = null
 ): CacheOptions {
     val options = if (cacheFailurePolicy != null) {
@@ -45,7 +43,6 @@ fun cacheOptions(
     if (coldTimeUnit != null) options.coldTimeUnit = coldTimeUnit
     if (evictCheckTTL != null) options.evictCheckTTL = evictCheckTTL
     if (evictCheckTimeUnit != null) options.evictCheckTimeUnit = evictCheckTimeUnit
-    if (readTimeout != null) options.readTimeout = readTimeout
 
     return options
 }
