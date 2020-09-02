@@ -18,7 +18,7 @@ import kotlin.system.measureTimeMillis
 class BlockingMultiFieldCacheTest {
     fun testCache(repository: KeyFieldValueRepository? = null, ttl:Long = 100L, coldTime: Long = 0L, applyTtlIfHit: Boolean = true) = MultiFieldCache<String>(
         name = "dict_cache",
-        keyFunction = Cache.KeyFunction { name, version, key -> "$name.$version:{$key}" },
+        keyFunction = Cache.KeyFunction { name, key -> "$name:{$key}" },
         lock = LocalMutexLock(5000),
         repository = repository ?: TestKeyFieldValueRepository(),
         serializer = StringSerializer,

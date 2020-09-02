@@ -4,7 +4,6 @@ import im.toss.util.cache.blocking.BlockingMultiFieldCache
 import im.toss.util.concurrent.lock.MutexLock
 import im.toss.util.concurrent.lock.run
 import im.toss.util.concurrent.lock.runOrRetry
-import im.toss.util.coroutine.runWithTimeout
 import im.toss.util.data.serializer.Serializer
 import im.toss.util.repository.KeyFieldValueRepository
 import kotlinx.coroutines.TimeoutCancellationException
@@ -15,7 +14,8 @@ class MultiFieldCache<TKey: Any>(
     private val lock: MutexLock,
     private val repository: KeyFieldValueRepository,
     private val serializer: Serializer,
-    val options: CacheOptions
+    val options: CacheOptions,
+    private val typeName: String = "MultiFieldCache"
 ) : Cache(name) {
     fun blocking() = BlockingMultiFieldCache(this)
 
@@ -38,7 +38,7 @@ class MultiFieldCache<TKey: Any>(
                 }
             } catch (e: Throwable) {
                 options.cacheFailurePolicy.handle(
-                    "MultiFieldCache.load(): exception occured on load: cache=$name, key=$key, field=$field", e
+                    "$typeName.load(): exception occured on load: cache=$name, key=$key, field=$field", e
                 )
             }
         }
@@ -50,7 +50,7 @@ class MultiFieldCache<TKey: Any>(
             val fetched = fetch()
             if (isNotEvicted(key, field)) {
                 val dataBytes = serializer.serialize(fetched)
-                repository.set(keys.key(key), field, dataBytes, options.ttl, options.ttlTimeUnit)
+                repository.set(keys.key(key), keys.field(field), dataBytes, options.ttl, options.ttlTimeUnit)
                 incrementPutCount()
             }
             fetched
@@ -77,9 +77,9 @@ class MultiFieldCache<TKey: Any>(
                 }
             }
         } catch (e: TimeoutCancellationException) {
-            options.cacheFailurePolicy.handle("MultiFieldCache.get(): timeout occured on read from cache: cache=$name, key=$key, field=$field", e)
+            options.cacheFailurePolicy.handle("$typeName.get(): timeout occured on read from cache: cache=$name, key=$key, field=$field", e)
         } catch (e: Throwable) {
-            options.cacheFailurePolicy.handle("MultiFieldCache.get(): exception occured on read from cache: cache=$name, key=$key, field=$field", e)
+            options.cacheFailurePolicy.handle("$typeName.get(): exception occured on read from cache: cache=$name, key=$key, field=$field", e)
         }
         incrementMissCount()
         return null
@@ -111,16 +111,16 @@ class MultiFieldCache<TKey: Any>(
                 }
             }
         } catch (e: TimeoutCancellationException) {
-            options.cacheFailurePolicy.handle("MultiFieldCache.getOrLoad(): timeout occured on read from cache: cache=$name, key=$key, field=$field", e)
+            options.cacheFailurePolicy.handle("$typeName.getOrLoad(): timeout occured on read from cache: cache=$name, key=$key, field=$field", e)
         } catch (e: Throwable) {
-            options.cacheFailurePolicy.handle("MultiFieldCache.getOrLoad(): exception occured on read from cache: cache=$name, key=$key, field=$field", e)
+            options.cacheFailurePolicy.handle("$typeName.getOrLoad(): exception occured on read from cache: cache=$name, key=$key, field=$field", e)
         }
         incrementMissCount()
         return fetch()
     }
 
     private suspend fun <T> readFromCache(key: TKey, field: String): T? {
-        val cachedData = repository.get(keys.key(key), field)
+        val cachedData = repository.get(keys.key(key), keys.field(field))
         return if (cachedData == null) {
             null
         } else {
@@ -137,7 +137,8 @@ class MultiFieldCache<TKey: Any>(
         private val keyFunction: KeyFunction,
         val options: CacheOptions
     ) {
-        fun key(key: K): String = keyFunction.function(name, options.version, key)
+        fun key(key: K): String = keyFunction.function(name, key)
+        fun field(field: String): String = "$field|${options.version}"
 
         fun lock(key: K, postfix: String): String = "${key(key)}|$postfix"
         fun cold(key:K) = lock(key, "@COLD")

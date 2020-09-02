@@ -2,7 +2,7 @@ package im.toss.util.cache
 
 import im.toss.test.equalsTo
 import im.toss.util.data.serializer.StringSerializer
-import im.toss.util.repository.KeyValueRepository
+import im.toss.util.repository.KeyFieldValueRepository
 import io.mockk.*
 import kotlinx.coroutines.*
 import org.assertj.core.api.Assertions.assertThat
@@ -15,11 +15,11 @@ import java.util.concurrent.TimeUnit
 import kotlin.system.measureTimeMillis
 
 class BlockingKeyValueCacheTest {
-    fun testCache(repository: KeyValueRepository? = null, ttl:Long = 100L, coldTime: Long = 0L, applyTtlIfHit: Boolean = true) = KeyValueCache<String>(
+    fun testCache(repository: KeyFieldValueRepository? = null, ttl:Long = 100L, coldTime: Long = 0L, applyTtlIfHit: Boolean = true) = KeyValueCache<String>(
         name = "dict_cache",
-        keyFunction = Cache.KeyFunction { name, version, key -> "$name.$version:{$key}" },
+        keyFunction = Cache.KeyFunction { name, key -> "$name:{$key}" },
         lock = LocalMutexLock(5000),
-        repository = repository ?: TestKeyValueRepository(),
+        repository = repository ?: TestKeyFieldValueRepository(),
         serializer = StringSerializer,
         options = cacheOptions(
             ttl = ttl,
@@ -138,7 +138,7 @@ class BlockingKeyValueCacheTest {
                 dynamicTest("coldTime이 ${given.coldTime}ms일때, evict하고 ${given.delayTime}ms 이후에 ${given.updateValue} 값을 적재하면, ${given.expected}이 된다.") {
                     runBlocking {
                         // given
-                        val repository = TestKeyValueRepository()
+                        val repository = TestKeyFieldValueRepository()
                         val cache = testCache(repository = repository, ttl = given.ttl, coldTime = given.coldTime)
                         println("coldTime: ${given.coldTime} ms")
                         cache.getOrLoad("key") { given.initValue }
@@ -292,7 +292,7 @@ class BlockingKeyValueCacheTest {
     @Test
     fun `데이터 소스로부터 값을 읽고, 적재가 되기 전, evict 발생 시, 값이 적재되지 않아야한다`() {
         runBlocking {
-            val repository = TestKeyValueRepository()
+            val repository = TestKeyFieldValueRepository()
             val cache = testCache(repository = repository, ttl = 200)
 
             // given
@@ -373,7 +373,7 @@ class BlockingKeyValueCacheTest {
     fun `evictionOnly 모드일때 load는 eviction이 된다`() {
         runBlocking {
             // given
-            val repository = TestKeyValueRepository()
+            val repository = TestKeyFieldValueRepository()
             val cache = testCache(repository, ttl = 1000)
             cache.getOrLoad("key") { "preset" }
 
@@ -394,7 +394,7 @@ class BlockingKeyValueCacheTest {
             coEvery { mock.get(any(), any()) } coAnswers { "loaded" }
 
             // given
-            val repository = TestKeyValueRepository()
+            val repository = TestKeyFieldValueRepository()
             val cache = testCache(repository, ttl = 1000)
             cache.getOrLoad("key") { "preset" }
 

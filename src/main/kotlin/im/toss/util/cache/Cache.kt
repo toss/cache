@@ -8,7 +8,7 @@ import kotlin.random.Random
 
 open class Cache(override val name: String) : CacheMeter {
     data class KeyFunction(
-        val function: (name: String, version: String, key: Any) -> String
+        val function: (name: String, key: Any) -> String
     )
 
 
