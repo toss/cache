@@ -33,7 +33,7 @@ class CacheManager(
                 name = name,
                 keyFunction = keyFunction,
                 lock = resouces.lock(lockAutoreleaseSeconds),
-                repository = resouces.keyValueRepository(),
+                repository = resouces.keyFieldValueRepository(),
                 serializer = getSerializer(serializerId),
                 options = options
             ).metrics(meterRegistry)
@@ -61,9 +61,7 @@ class CacheManager(
         } as MultiFieldCache<TKey>
     }
 
-    private var keyFunction: Cache.KeyFunction = Cache.KeyFunction { name, version, key ->
-        "cache:$name.$version:$key"
-    }
+    private var keyFunction: Cache.KeyFunction = Cache.KeyFunction { name, key -> "cache:$name:$key" }
 
     private val resources = ConcurrentHashMap<String, CacheResources>()
     private val serializers = ConcurrentHashMap<String, Serializer>()
@@ -111,7 +109,7 @@ class CacheManager(
     }
 
     class ResoucesDefinition(private val cacheManager: CacheManager) {
-        fun keyFunction(block: (name: String, version: String, key: Any) -> String) {
+        fun keyFunction(block: (name: String, key: Any) -> String) {
             cacheManager.setKeyFunction(Cache.KeyFunction(block))
         }
 

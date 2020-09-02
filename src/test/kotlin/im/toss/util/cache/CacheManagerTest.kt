@@ -15,7 +15,7 @@ internal class CacheManagerTest {
     fun `inMemory keyValueCache`() {
         runBlocking {
             val cacheManager = CacheManager(SimpleMeterRegistry()) {
-                keyFunction { name, version, key -> "$name.$version:$key" }
+                keyFunction { name, key -> "$name:$key" }
                 inMemory()
                 serializer { StringSerializer }
             }
@@ -45,7 +45,7 @@ internal class CacheManagerTest {
     fun `inMemory multiFieldCache`() {
         runBlocking {
             val cacheManager = CacheManager(SimpleMeterRegistry()) {
-                keyFunction { name, version, key -> "$name.$version:$key" }
+                keyFunction { name, key -> "$name:$key" }
                 inMemory()
                 serializer { StringSerializer }
             }

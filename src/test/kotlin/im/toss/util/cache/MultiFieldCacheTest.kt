@@ -18,13 +18,14 @@ import java.util.concurrent.TimeUnit
 import kotlin.system.measureTimeMillis
 
 class MultiFieldCacheTest {
-    private fun testCache(repository: KeyFieldValueRepository? = null, ttl:Long = 100L, coldTime: Long = 0L, applyTtlIfHit: Boolean = true, mutexLock: MutexLock = LocalMutexLock(5000), failurePolicy: CacheFailurePolicy = CacheFailurePolicy.ThrowException) = MultiFieldCache<String>(
+    private fun testCache(repository: KeyFieldValueRepository? = null, version: String = "0001", ttl:Long = 100L, coldTime: Long = 0L, applyTtlIfHit: Boolean = true, mutexLock: MutexLock = LocalMutexLock(5000), failurePolicy: CacheFailurePolicy = CacheFailurePolicy.ThrowException) = MultiFieldCache<String>(
         name = "dict_cache",
-        keyFunction = Cache.KeyFunction { name, version, key -> "$name.$version:{$key}" },
+        keyFunction = Cache.KeyFunction { name, key -> "$name:{$key}" },
         lock = mutexLock,
         repository = repository ?: TestKeyFieldValueRepository(),
         serializer = StringSerializer,
         options = cacheOptions(
+            version = version,
             ttl = ttl,
             ttlTimeUnit = TimeUnit.MILLISECONDS,
             coldTime = coldTime,
@@ -122,6 +123,39 @@ class MultiFieldCacheTest {
             // then
             cache.get<String>("key", "field1").equalsTo(null)
             cache.get<String>("key", "field2").equalsTo(null)
+        }
+    }
+
+    @Test
+    fun `evict하면 같은 키의 여러 버전의 캐시 데이터가 일괄 제거 된다`() {
+        runBlocking {
+            val repository = TestKeyFieldValueRepository()
+            val cacheCount = 10
+            (1..cacheCount).forEach { cacheVersion ->
+                val caches = (1..cacheCount).associateWith { version -> testCache(repository = repository, version = "$version", ttl = 1000) }
+
+                caches.forEach { (version, cache) -> cache.getOrLoad("key", "field") { "value:$version" } }
+                (caches[cacheVersion] ?: error("")).evict("key")
+                caches.values.forEach { it.get<String>("key", "field").equalsTo(null) }
+            }
+        }
+    }
+
+    @Test
+    fun `같은 키의 캐시라도 버전이 다르면 격리되어 저장되고 읽을 수 있다`() {
+        runBlocking {
+            // given
+            val repository = TestKeyFieldValueRepository()
+            val cacheV1 = testCache(repository = repository, version = "v1", ttl = 1000)
+            val cacheV2 = testCache(repository = repository, version = "v2", ttl = 1000)
+
+            // when
+            cacheV1.getOrLoad("key", "field") { "value:v1" }
+            cacheV2.getOrLoad("key", "field") { "value:v2" }
+
+            // then
+            cacheV1.get<String>("key", "field").equalsTo("value:v1")
+            cacheV2.get<String>("key", "field").equalsTo("value:v2")
         }
     }
 

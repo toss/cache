@@ -4,21 +4,25 @@ import im.toss.test.equalsTo
 import im.toss.util.concurrent.lock.MutexLock
 import im.toss.util.coroutine.runWithTimeout
 import im.toss.util.data.serializer.StringSerializer
-import im.toss.util.repository.KeyValueRepository
-import io.mockk.*
+import im.toss.util.repository.KeyFieldValueRepository
+import io.mockk.coEvery
+import io.mockk.coVerify
+import io.mockk.mockk
+import io.mockk.slot
 import kotlinx.coroutines.*
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.data.Offset
 import org.junit.jupiter.api.DynamicTest
+import org.junit.jupiter.api.DynamicTest.dynamicTest
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestFactory
-import org.junit.jupiter.api.DynamicTest.dynamicTest
 import java.util.concurrent.TimeUnit
 import kotlin.system.measureTimeMillis
 
 class KeyValueCacheTest {
     private fun testCache(
-        repository: KeyValueRepository? = null,
+        repository: KeyFieldValueRepository? = null,
+        version: String = "0001",
         ttl: Long = 100L,
         coldTime: Long = 0L,
         applyTtlIfHit: Boolean = true,
@@ -26,11 +30,12 @@ class KeyValueCacheTest {
         failurePolicy: CacheFailurePolicy = CacheFailurePolicy.ThrowException
     ) = KeyValueCache<String>(
         name = "dict_cache",
-        keyFunction = Cache.KeyFunction { name, version, key -> "$name.$version:{$key}" },
+        keyFunction = Cache.KeyFunction { name, key -> "$name:{$key}" },
         lock = mutexLock,
-        repository = repository ?: TestKeyValueRepository(),
+        repository = repository ?: TestKeyFieldValueRepository(),
         serializer = StringSerializer,
         options = cacheOptions(
+            version = version,
             ttl = ttl,
             ttlTimeUnit = TimeUnit.MILLISECONDS,
             coldTime = coldTime,
@@ -131,6 +136,40 @@ class KeyValueCacheTest {
         }
     }
 
+    @Test
+    fun `evict하면 같은 키의 여러 버전의 캐시 데이터가 일괄 제거 된다`() {
+        runBlocking {
+            val repository = TestKeyFieldValueRepository()
+            val cacheCount = 10
+            (1..cacheCount).forEach { cacheVersion ->
+                val caches = (1..cacheCount).associateWith { version -> testCache(repository = repository, version = "$version", ttl = 1000) }
+
+                caches.forEach { (version, cache) -> cache.getOrLoad("key") { "value:$version" } }
+                (caches[cacheVersion] ?: error("")).evict("key")
+                caches.values.forEach { it.get<String>("key").equalsTo(null) }
+            }
+        }
+    }
+
+    @Test
+    fun `같은 키의 캐시라도 버전이 다르면 격리되어 저장되고 읽을 수 있다`() {
+        runBlocking {
+            // given
+            val repository = TestKeyFieldValueRepository()
+            val cacheV1 = testCache(repository = repository, version = "v1", ttl = 1000)
+            val cacheV2 = testCache(repository = repository, version = "v2", ttl = 1000)
+
+            // when
+            cacheV1.getOrLoad("key") { "value:v1" }
+            cacheV2.getOrLoad("key") { "value:v2" }
+
+            // then
+            cacheV1.get<String>("key").equalsTo("value:v1")
+            cacheV2.get<String>("key").equalsTo("value:v2")
+        }
+    }
+
+
     // evict 이후 cold time 테스트
     @TestFactory
     fun `evict이후 설정된 coldtime동안 cache에 적재 되지 않는다`(): List<DynamicTest> {
@@ -148,7 +187,7 @@ class KeyValueCacheTest {
                 dynamicTest("coldTime이 ${given.coldTime}ms일때, evict하고 ${given.delayTime}ms 이후에 ${given.updateValue} 값을 적재하면, ${given.expected}이 된다.") {
                     runBlocking {
                         // given
-                        val repository = TestKeyValueRepository()
+                        val repository = TestKeyFieldValueRepository()
                         val cache = testCache(repository = repository, ttl = given.ttl, coldTime = given.coldTime)
                         println("coldTime: ${given.coldTime} ms")
                         cache.getOrLoad("key") { given.initValue }
@@ -303,7 +342,7 @@ class KeyValueCacheTest {
     @Test
     fun `데이터 소스로부터 값을 읽고, 적재가 되기 전, evict 발생 시, 값이 적재되지 않아야한다`() {
         runBlocking {
-            val repository = TestKeyValueRepository()
+            val repository = TestKeyFieldValueRepository()
             val cache = testCache(repository = repository, ttl = 200)
 
             // given
@@ -384,7 +423,7 @@ class KeyValueCacheTest {
     fun `evictionOnly 모드일때 load는 eviction이 된다`() {
         runBlocking {
             // given
-            val repository = TestKeyValueRepository()
+            val repository = TestKeyFieldValueRepository()
             val cache = testCache(repository, ttl = 1000)
             cache.getOrLoad("key") { "preset" }
 
@@ -405,7 +444,7 @@ class KeyValueCacheTest {
             coEvery { mock.get(any(), any()) } coAnswers { "loaded" }
 
             // given
-            val repository = TestKeyValueRepository()
+            val repository = TestKeyFieldValueRepository()
             val cache = testCache(repository, ttl = 1000)
             cache.getOrLoad("key") { "preset" }
 
@@ -517,11 +556,11 @@ class KeyValueCacheTest {
     @Test
     fun `cacheFailurePolicy가 fallbackToOrigin일때, load시 repository에서 예외가 발생하면, 캐시 로딩이 무시된다`() {
         runBlocking {
-            val repository = mockk<KeyValueRepository>(relaxed = true)
-            coEvery { repository.get(any()) } coAnswers {
+            val repository = mockk<KeyFieldValueRepository>(relaxed = true)
+            coEvery { repository.get(any(), any()) } coAnswers {
                 throw Exception("테스트 get 예외")
             }
-            coEvery { repository.set(any(), any(), any(), any()) } coAnswers {
+            coEvery { repository.set(any(), any(), any(), any(), any()) } coAnswers {
                 throw Exception("테스트 set 예외")
             }
             coEvery { repository.expire(any(), any(), any()) } coAnswers {
@@ -536,11 +575,11 @@ class KeyValueCacheTest {
     @Test
     fun `cacheFailurePolicy가 fallbackToOrigin일때, get시 repository에서 예외가 발생하면, null이 반환된다`() {
         runBlocking {
-            val repository = mockk<KeyValueRepository>(relaxed = true)
-            coEvery { repository.get(any()) } coAnswers {
+            val repository = mockk<KeyFieldValueRepository>(relaxed = true)
+            coEvery { repository.get(any(), any()) } coAnswers {
                 throw Exception("테스트 get 예외")
             }
-            coEvery { repository.set(any(), any(), any(), any()) } coAnswers {
+            coEvery { repository.set(any(), any(), any(), any(), any()) } coAnswers {
                 throw Exception("테스트 set 예외")
             }
             coEvery { repository.expire(any(), any(), any()) } coAnswers {
@@ -558,14 +597,14 @@ class KeyValueCacheTest {
     @Test
     fun `cacheFailurePolicy가 fallbackToOrigin일때, get시 repository에서 timeout이 발생하면, null이 반환된다`() {
         runBlocking {
-            val repository = mockk<KeyValueRepository>(relaxed = true)
-            coEvery { repository.get(any()) } coAnswers {
+            val repository = mockk<KeyFieldValueRepository>(relaxed = true)
+            coEvery { repository.get(any(), any()) } coAnswers {
                 runWithTimeout(50) {
                     delay(10000)
                     "delayValue".toByteArray()
                 }
             }
-            coEvery { repository.set(any(), any(), any(), any()) } coAnswers {
+            coEvery { repository.set(any(), any(), any(), any(), any()) } coAnswers {
                 runWithTimeout(50) {
                     delay(10000)
                 }
