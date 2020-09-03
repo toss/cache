@@ -1,6 +1,8 @@
 package im.toss.util.cache
 
 import im.toss.util.cache.blocking.BlockingMultiFieldCache
+import im.toss.util.cache.metrics.CacheMeter
+import im.toss.util.cache.metrics.CacheMetrics
 import im.toss.util.concurrent.lock.MutexLock
 import im.toss.util.concurrent.lock.run
 import im.toss.util.concurrent.lock.runOrRetry
@@ -10,19 +12,20 @@ import kotlinx.coroutines.TimeoutCancellationException
 
 class MultiFieldCache<TKey: Any>(
     override val name: String,
-    keyFunction: KeyFunction,
+    keyFunction: Cache.KeyFunction,
     private val lock: MutexLock,
     private val repository: KeyFieldValueRepository,
     private val serializer: Serializer,
     val options: CacheOptions,
-    private val typeName: String = "MultiFieldCache"
-) : Cache(name) {
+    private val typeName: String = "MultiFieldCache",
+    private val metrics: CacheMetrics = CacheMetrics(name)
+) : Cache, CacheMeter by metrics {
     fun blocking() = BlockingMultiFieldCache(this)
 
     private val keys = Keys<TKey>(name, keyFunction, options)
 
     suspend fun evict(key: TKey) {
-        incrementEvictCount()
+        metrics.incrementEvictCount()
         setColdTime(key)
         setEvicted(key)
         repository.delete(keys.key(key))
@@ -51,7 +54,7 @@ class MultiFieldCache<TKey: Any>(
             if (isNotEvicted(key, field)) {
                 val dataBytes = serializer.serialize(fetched)
                 repository.set(keys.key(key), keys.field(field), dataBytes, options.ttl, options.ttlTimeUnit)
-                incrementPutCount()
+                metrics.incrementPutCount()
             }
             fetched
         }
@@ -65,11 +68,11 @@ class MultiFieldCache<TKey: Any>(
         try {
             return when (val cached = readFromCache<T>(key, field)) {
                 null -> {
-                    incrementMissCount()
+                    metrics.incrementMissCount()
                     null
                 }
                 else -> {
-                    incrementHitCount()
+                    metrics.incrementHitCount()
                     if (options.applyTtlIfHit && options.ttl > 0L) {
                         repository.expire(keys.key(key), options.ttl, options.ttlTimeUnit)
                     }
@@ -81,13 +84,13 @@ class MultiFieldCache<TKey: Any>(
         } catch (e: Throwable) {
             options.cacheFailurePolicy.handle("$typeName.get(): exception occured on read from cache: cache=$name, key=$key, field=$field", e)
         }
-        incrementMissCount()
+        metrics.incrementMissCount()
         return null
     }
 
     suspend fun <T: Any> getOrLoad(key: TKey, field: String, fetch: (suspend () -> T)): T {
         if (options.cacheMode == CacheMode.EVICTION_ONLY) {
-            incrementMissCount()
+            metrics.incrementMissCount()
             return fetch()
         }
 
@@ -95,14 +98,14 @@ class MultiFieldCache<TKey: Any>(
             return runOrRetry {
                 when (val cached = readFromCache<T>(key, field)) {
                     null -> if (isColdTime(key)) {
-                        incrementMissCount()
+                        metrics.incrementMissCount()
                         fetch()
                     } else loadToCache(key, field) {
-                        incrementMissCount()
+                        metrics.incrementMissCount()
                         fetch()
                     }
                     else -> {
-                        incrementHitCount()
+                        metrics.incrementHitCount()
                         if (options.applyTtlIfHit && options.ttl > 0L) {
                             repository.expire(keys.key(key), options.ttl, options.ttlTimeUnit)
                         }
@@ -115,7 +118,7 @@ class MultiFieldCache<TKey: Any>(
         } catch (e: Throwable) {
             options.cacheFailurePolicy.handle("$typeName.getOrLoad(): exception occured on read from cache: cache=$name, key=$key, field=$field", e)
         }
-        incrementMissCount()
+        metrics.incrementMissCount()
         return fetch()
     }
 
@@ -134,7 +137,7 @@ class MultiFieldCache<TKey: Any>(
 
     private class Keys<K: Any>(
         private val name: String,
-        private val keyFunction: KeyFunction,
+        private val keyFunction: Cache.KeyFunction,
         val options: CacheOptions
     ) {
         fun key(key: K): String = keyFunction.function(name, key)

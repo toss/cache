@@ -633,5 +633,27 @@ class KeyValueCacheTest {
             } equalsTo "origin"
         }
     }
+
+    @Test
+    fun `cache 사용 현황을 확인 할 수 있다`() {
+        runBlocking {
+            // given
+            val cache = testCache(ttl = 10)
+
+            // when
+            cache.getOrLoad("key") { "1" }
+            cache.getOrLoad("key") { "1" }
+            cache.getOrLoad("key") { "1" }
+            cache.getOrLoad("key") { "1" }
+            cache.evict("key")
+            cache.getOrLoad("key") { "1" }
+
+            // then
+            cache.missCount equalsTo 2L
+            cache.hitCount equalsTo 3L
+            cache.putCount equalsTo 2L
+            cache.evictionCount equalsTo 1L
+        }
+    }
 }
 

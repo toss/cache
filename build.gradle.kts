@@ -154,18 +154,18 @@ publishing {
     publications {
         create<MavenPublication>("maven") {
             groupId = "im.toss"
-            artifactId = "maskking"
+            artifactId = "cache"
             from(components["java"])
             artifact(tasks["sourcesJar"])
             artifact(tasks["javadocJar"])
             pom {
-                name.set("maskking")
-                description.set("Masking library")
-                url.set("https://github.com/toss/maskking")
+                name.set("cache")
+                description.set("Cache library")
+                url.set("https://github.com/toss/cache")
                 scm {
-                    url.set("git@github.com:toss/maskking.git")
-                    connection.set("scm:git:git@github.com:toss/maskking.git")
-                    developerConnection.set("scm:git:git@github.com:toss/maskking.git")
+                    url.set("git@github.com:toss/cache.git")
+                    connection.set("scm:git:git@github.com:toss/cache.git")
+                    developerConnection.set("scm:git:git@github.com:toss/cache.git")
                 }
                 licenses {
                     license {

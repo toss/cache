@@ -1,21 +1,24 @@
 package im.toss.util.cache
 
 import im.toss.util.cache.blocking.BlockingKeyValueCache
+import im.toss.util.cache.metrics.CacheMeter
+import im.toss.util.cache.metrics.CacheMetrics
 import im.toss.util.concurrent.lock.MutexLock
 import im.toss.util.data.serializer.Serializer
 import im.toss.util.repository.KeyFieldValueRepository
 
 class KeyValueCache<TKey: Any>(
     override val name: String,
-    keyFunction: KeyFunction,
+    keyFunction: Cache.KeyFunction,
     lock: MutexLock,
     repository: KeyFieldValueRepository,
     serializer: Serializer,
-    val options: CacheOptions
-) : Cache(name) {
+    val options: CacheOptions,
+    private val metrics: CacheMetrics = CacheMetrics(name)
+) : Cache, CacheMeter by metrics {
     fun blocking() = BlockingKeyValueCache(this)
 
-    private val cache = MultiFieldCache<TKey>(name, keyFunction, lock, repository, serializer, options)
+    private val cache = MultiFieldCache<TKey>(name, keyFunction, lock, repository, serializer, options, "KeyValueCache", metrics)
     private val field = ".value"
 
     suspend fun evict(key: TKey) = cache.evict(key)
