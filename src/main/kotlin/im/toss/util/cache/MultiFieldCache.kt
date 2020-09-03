@@ -4,11 +4,11 @@ import im.toss.util.cache.blocking.BlockingMultiFieldCache
 import im.toss.util.cache.metrics.CacheMeter
 import im.toss.util.cache.metrics.CacheMetrics
 import im.toss.util.concurrent.lock.MutexLock
-import im.toss.util.concurrent.lock.run
 import im.toss.util.concurrent.lock.runOrRetry
 import im.toss.util.data.serializer.Serializer
 import im.toss.util.repository.KeyFieldValueRepository
 import kotlinx.coroutines.TimeoutCancellationException
+import java.util.concurrent.atomic.AtomicBoolean
 
 class MultiFieldCache<TKey: Any>(
     override val name: String,
@@ -48,17 +48,43 @@ class MultiFieldCache<TKey: Any>(
     }
 
     private suspend fun <T: Any> loadToCache(key: TKey, field: String, fetch: (suspend () -> T)): T {
-        return lock.run(keys.fetchKey(key, field)) {
-            setNotEvicted(key, field)
-            val fetched = fetch()
-            if (isNotEvicted(key, field)) {
-                val dataBytes = serializer.serialize(fetched)
-                repository.set(keys.key(key), keys.field(field), dataBytes, options.ttl, options.ttlTimeUnit)
-                metrics.incrementPutCount()
+        return lockForLoad<T>(key, field).load(fetch())
+    }
+
+    @Throws(MutexLock.FailedAcquireException::class)
+    suspend fun <T:Any> lockForLoad(key: TKey, field: String, timeout: Long = -1): CacheValueLoader<T> {
+        val lockKey = keys.fetchKey(key, field)
+        if (!lock.acquire(lockKey, timeout)) {
+            throw MutexLock.FailedAcquireException
+        }
+        setNotEvicted(key, field)
+        return KeyFieldCacheValueLoader(key, field, lockKey)
+    }
+
+    inner class KeyFieldCacheValueLoader<T: Any>(
+        private val key: TKey,
+        private val field: String,
+        private val lockKey: String
+    ): CacheValueLoader<T> {
+        private var loaded = AtomicBoolean(false)
+        override suspend fun load(value: T): T {
+            if (loaded.compareAndSet(false, true)) {
+                return try {
+                    if (isNotEvicted(key, field)) {
+                        val dataBytes = serializer.serialize(value)
+                        repository.set(keys.key(key), keys.field(field), dataBytes, options.ttl, options.ttlTimeUnit)
+                        metrics.incrementPutCount()
+                    }
+                    value
+                } finally {
+                    lock.release(lockKey)
+                }
+            } else {
+                throw AlreadyLoadedException()
             }
-            fetched
         }
     }
+
 
     suspend fun <T: Any> get(key: TKey, field: String): T? {
         if (options.cacheMode == CacheMode.EVICTION_ONLY) {
@@ -121,6 +147,42 @@ class MultiFieldCache<TKey: Any>(
         metrics.incrementMissCount()
         return fetch()
     }
+
+    suspend fun <T: Any> getOrLockForLoad(key: TKey, field: String): ResultGetOrLockForLoad<T> {
+        if (options.cacheMode == CacheMode.EVICTION_ONLY) {
+            metrics.incrementMissCount()
+            return ResultGetOrLockForLoad()
+        }
+
+        try {
+            return runOrRetry {
+                when (val cached = readFromCache<T>(key, field)) {
+                    null -> if (isColdTime(key)) {
+                        metrics.incrementMissCount()
+                        ResultGetOrLockForLoad()
+                    } else {
+                        metrics.incrementMissCount()
+                        ResultGetOrLockForLoad(loader = lockForLoad(key, field))
+                    }
+                    else -> {
+                        metrics.incrementHitCount()
+                        if (options.applyTtlIfHit && options.ttl > 0L) {
+                            repository.expire(keys.key(key), options.ttl, options.ttlTimeUnit)
+                        }
+                        ResultGetOrLockForLoad(cached)
+                    }
+                }
+            }
+        } catch (e: TimeoutCancellationException) {
+            options.cacheFailurePolicy.handle("$typeName.getOrPendingLoad(): timeout occured on read from cache: cache=$name, key=$key, field=$field", e)
+        } catch (e: Throwable) {
+            options.cacheFailurePolicy.handle("$typeName.getOrPendingLoad(): exception occured on read from cache: cache=$name, key=$key, field=$field", e)
+        }
+        metrics.incrementMissCount()
+
+        return ResultGetOrLockForLoad()
+    }
+
 
     private suspend fun <T> readFromCache(key: TKey, field: String): T? {
         val cachedData = repository.get(keys.key(key), keys.field(field))

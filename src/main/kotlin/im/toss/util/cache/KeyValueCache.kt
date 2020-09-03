@@ -25,4 +25,7 @@ class KeyValueCache<TKey: Any>(
     suspend fun <T: Any> load(key: TKey, fetch: (suspend () -> T)) = cache.load(key, field, fetch)
     suspend fun <T: Any> get(key: TKey): T? = cache.get(key, field)
     suspend fun <T: Any> getOrLoad(key: TKey, fetch: (suspend () -> T)): T = cache.getOrLoad(key, field, fetch)
+    suspend fun <T: Any> getOrLockForLoad(key: TKey): ResultGetOrLockForLoad<T> = cache.getOrLockForLoad(key, field)
+    @Throws(MutexLock.FailedAcquireException::class)
+    suspend fun <T:Any> lockForLoad(key: TKey, timeout: Long = -1): CacheValueLoader<T> = cache.lockForLoad(key, field, timeout)
 }
