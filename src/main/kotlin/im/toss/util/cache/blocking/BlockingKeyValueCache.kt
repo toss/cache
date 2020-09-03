@@ -2,6 +2,7 @@ package im.toss.util.cache.blocking
 
 import im.toss.util.cache.CacheMode
 import im.toss.util.cache.KeyValueCache
+import im.toss.util.concurrent.lock.MutexLock
 import kotlinx.coroutines.runBlocking
 
 class BlockingKeyValueCache<TKey: Any>(val cache: KeyValueCache<TKey>) {
@@ -29,5 +30,14 @@ class BlockingKeyValueCache<TKey: Any>(val cache: KeyValueCache<TKey>) {
         cache.getOrLoad(key) {
             fetch()
         }
+    }
+
+    fun <T: Any> getOrLockForLoad(key: TKey): ResultBlockingGetOrLockForLoad<T> = runBlocking {
+        cache.getOrLockForLoad<T>(key).blocking()
+    }
+
+    @Throws(MutexLock.FailedAcquireException::class)
+    fun <T : Any> lockForLoad(key: TKey, timeout: Long = -1): BlockingCacheValueLoader<T> = runBlocking {
+        cache.lockForLoad<T>(key, timeout).blocking()
     }
 }

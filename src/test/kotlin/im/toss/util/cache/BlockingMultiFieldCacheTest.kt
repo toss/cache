@@ -11,6 +11,8 @@ import org.junit.jupiter.api.DynamicTest
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestFactory
 import org.junit.jupiter.api.DynamicTest.dynamicTest
+import org.junit.jupiter.api.assertThrows
+import java.time.ZonedDateTime
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import kotlin.system.measureTimeMillis
@@ -497,6 +499,54 @@ class BlockingMultiFieldCacheTest {
             // then
             cache.getOrLoad("key", "field") { "loaded" } equalsTo "loaded"
             cache.get<String>("key", "field") equalsTo null
+        }
+    }
+
+    @Test
+    fun `특정 키를 lockForLoad로 잠금을 하면 값을 쓸때까지 잠긴다`() {
+        runBlocking {
+            val cache = testCache()
+            val loader = cache.lockForLoad<String>("key", "field")
+            cache.get<String>("key", "field") equalsTo null
+            println("${ZonedDateTime.now()}> lock")
+
+            val job = async {
+                delay(1000)
+                println("${ZonedDateTime.now()}> load")
+                loader.load("HELLO")
+
+                assertThrows<AlreadyLoadedException> {
+                    runBlocking { loader.load("WORLD") }
+                }
+            }
+
+            cache.getOrLoad("key", "field") { "NEW" } equalsTo "HELLO"
+            println("${ZonedDateTime.now()}> after get")
+            job.await()
+        }
+    }
+
+    @Test
+    fun `특정 키를 getOrLockForLoad로 잠금을 하면 값을 쓸때까지 잠긴다`() {
+        runBlocking {
+            val cache = testCache()
+            val result = cache.getOrLockForLoad<String>("key", "field")
+            result.value equalsTo null
+            println("${ZonedDateTime.now()}> lock")
+
+            val job = async {
+                delay(1000)
+                println("${ZonedDateTime.now()}> load")
+                result.loader!!.load("HELLO")
+
+                assertThrows<AlreadyLoadedException> {
+                    runBlocking { result.loader!!.load("WORLD") }
+                }
+            }
+
+            cache.getOrLoad("key", "field") { "NEW" } equalsTo "HELLO"
+            println("${ZonedDateTime.now()}> after get")
+            job.await()
         }
     }
 }
