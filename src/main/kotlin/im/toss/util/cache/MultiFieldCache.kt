@@ -83,6 +83,12 @@ class MultiFieldCache<TKey: Any>(
                 throw AlreadyLoadedException()
             }
         }
+
+        override suspend fun release() {
+            if (loaded.compareAndSet(false, true)) {
+                lock.release(lockKey)
+            }
+        }
     }
 
 
@@ -174,9 +180,9 @@ class MultiFieldCache<TKey: Any>(
                 }
             }
         } catch (e: TimeoutCancellationException) {
-            options.cacheFailurePolicy.handle("$typeName.getOrPendingLoad(): timeout occured on read from cache: cache=$name, key=$key, field=$field", e)
+            options.cacheFailurePolicy.handle("$typeName.getOrLockForLoad(): timeout occured on read from cache: cache=$name, key=$key, field=$field", e)
         } catch (e: Throwable) {
-            options.cacheFailurePolicy.handle("$typeName.getOrPendingLoad(): exception occured on read from cache: cache=$name, key=$key, field=$field", e)
+            options.cacheFailurePolicy.handle("$typeName.getOrLockForLoad(): exception occured on read from cache: cache=$name, key=$key, field=$field", e)
         }
         metrics.incrementMissCount()
 

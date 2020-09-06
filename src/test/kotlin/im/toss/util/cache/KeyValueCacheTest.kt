@@ -685,6 +685,31 @@ class KeyValueCacheTest {
     }
 
     @Test
+    fun `특정 키를 getOrLockForLoad로 잠금을 하고 release를 할때까지 잠긴다`() {
+        runBlocking {
+            val cache = testCache()
+            cache.getOrLoad("key") { "FIRST" }
+            val loader = cache.lockForLoad<String>("key")
+            println("${ZonedDateTime.now()}> lock")
+
+            val job = async {
+                delay(1000)
+                println("${ZonedDateTime.now()}> load")
+                loader.release()
+
+                assertThrows<AlreadyLoadedException> {
+                    runBlocking { loader.load("WORLD") }
+                }
+            }
+
+            cache.getOrLoad("key") { "NEW" } equalsTo "FIRST"
+            println("${ZonedDateTime.now()}> after get")
+            job.await()
+        }
+    }
+
+
+    @Test
     fun `cache 사용 현황을 확인 할 수 있다`() {
         runBlocking {
             // given

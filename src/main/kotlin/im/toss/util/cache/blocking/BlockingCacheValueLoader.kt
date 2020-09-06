@@ -10,6 +10,8 @@ class BlockingCacheValueLoader<T: Any>(private val loader: CacheValueLoader<T>) 
     fun load(value: T): T = runBlocking {
         loader.load(value)
     }
+
+    fun release() = runBlocking { loader.release() }
 }
 
 class ResultBlockingGetOrLockForLoad<T: Any>(
