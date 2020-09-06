@@ -2,12 +2,15 @@ package im.toss.util.cache.blocking
 
 import im.toss.util.cache.AlreadyLoadedException
 import im.toss.util.cache.CacheValueLoader
+import im.toss.util.cache.LoadResult
 import im.toss.util.cache.ResultGetOrLockForLoad
 import kotlinx.coroutines.runBlocking
 
 class BlockingCacheValueLoader<T: Any>(private val loader: CacheValueLoader<T>) {
+    val version: Long get() = loader.version
+
     @Throws(AlreadyLoadedException::class)
-    fun load(value: T): T = runBlocking {
+    fun load(value: T): LoadResult<T> = runBlocking {
         loader.load(value)
     }
 

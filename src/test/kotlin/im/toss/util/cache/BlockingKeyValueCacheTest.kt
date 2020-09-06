@@ -513,5 +513,128 @@ class BlockingKeyValueCacheTest {
             job.await()
         }
     }
+
+    @Test
+    fun `낙관적 락으로 캐시에 값을 기록한다`() {
+        runBlocking {
+            val key = "key"
+            val cache = testCache(ttl = 10000)
+            cache.load(key) { "VER0" }
+
+            val lock = cache.optimisticLockForLoad<String>(key)
+            lock.load("VER1")
+
+            cache.get<String>(key) equalsTo "VER1"
+        }
+    }
+
+
+    @Test
+    fun `낙관적 락 중 키가 evict되면 기록하지 않는다`() {
+        runBlocking {
+            val key = "key"
+            val cache = testCache(ttl = 10000)
+            cache.load(key) { "VER0" }
+
+            val lock = cache.optimisticLockForLoad<String>(key)
+            cache.evict(key)
+            lock.load("VER1")
+
+            cache.get<String>(key) equalsTo null
+        }
+    }
+
+    @Test
+    fun `한 키 필드에 낙관적 락으로 동시에 기록이 되면 캐시에서 값을 제거한다`() {
+        val startTime = System.currentTimeMillis()
+        fun now() = (System.currentTimeMillis() - startTime).toString().padStart(5, ' ')
+        fun log(value: String) = println(" ${now()} $value")
+
+        /*
+        |-- load() { "VER0" } -------------------------------------------------|
+        |------------------- optimisticLockForLoad() ------ load("VER1") ------|
+        |--------------------- optimisticLockForLoad() ------ load("VER2") ----| get() -> null
+        */
+
+        runBlocking {
+            val key = "key"
+            val cache = testCache(ttl = 10000)
+            cache.load(key) { "VER0" }
+            cache.get<String>(key) equalsTo "VER0"
+            log("init")
+            val jobs = listOf(
+                async {
+                    log("[1] lock for VER1")
+                    val lock = cache.optimisticLockForLoad<String>(key)
+                    log("[1] lock version: ${lock.version}")
+                    delay(200)
+                    lock.load("VER1")
+                    log("[1] loaded VER1")
+                    cache.get<String>(key) equalsTo null
+                },
+                async {
+                    log("[2] lock for VER2")
+                    val lock = cache.optimisticLockForLoad<String>(key)
+                    log("[2] lock version: ${lock.version}")
+                    delay(400)
+                    lock.load("VER2")
+                    log("[2] loaded VER2")
+                    cache.get<String>(key) equalsTo null
+                }
+            )
+            log("get expect VER0")
+            cache.get<String>(key) equalsTo "VER0"
+            delay(300)
+            jobs.awaitAll()
+            cache.get<String>(key) equalsTo null
+        }
+    }
+
+    @Test
+    fun `한 키 필드에 낙관적 락으로 두 값이 동시에 기록될때, 먼저 실행된 락이 늦게 기록되면 캐시에서 값을 제거한다`() {
+        val startTime = System.currentTimeMillis()
+        fun now() = (System.currentTimeMillis() - startTime).toString().padStart(5, ' ')
+        fun log(value: String) = println(" ${now()} $value")
+
+        /*
+        |<-- load() { "VER0" } -->| get() -> "VER0"
+        |-------------------<optimisticLockForLoad()> | <----------- delay -----------> | <- load("VER1") ->| get() -> null
+        |--------------------------------<optimisticLockForLoad()> | <- load("VER2") -> |  get() -> "VER2"
+        */
+
+        runBlocking {
+            val key = "key"
+            val cache = testCache(ttl = 10000)
+            cache.load(key) { "VER0" }
+            cache.get<String>(key) equalsTo "VER0"
+            log("init")
+            val jobs = listOf(
+                async {
+                    log("[1] lock for VER1")
+                    val lock = cache.optimisticLockForLoad<String>(key)
+                    log("[1] lock version: ${lock.version}")
+                    delay(500)
+                    lock.load("VER1")
+                    log("[1] loaded VER1")
+                    // 먼저 시작했고, 늦게 로딩된 경우, 어떤 값이 더 최신 데이터인지 알기 어렵기때문에 캐시를 비운다.
+                    cache.get<String>(key) equalsTo null
+                },
+                async {
+                    delay(100)
+                    log("[2] lock for VER2")
+                    val lock = cache.optimisticLockForLoad<String>(key)
+                    log("[2] lock version: ${lock.version}")
+                    delay(100)
+                    lock.load("VER2")
+                    log("[2] loaded VER2")
+                    // 뒤에 시작했고, 빨리 로딩된 경우 캐시에 데이터가 로딩 된다.
+                    cache.get<String>(key) equalsTo "VER2"
+                }
+            )
+            jobs.awaitAll()
+            // 결국 캐시에 값은 없어진다
+            cache.get<String>(key) equalsTo null
+        }
+    }
 }
 

@@ -8,7 +8,10 @@ import im.toss.util.concurrent.lock.runOrRetry
 import im.toss.util.data.serializer.Serializer
 import im.toss.util.repository.KeyFieldValueRepository
 import kotlinx.coroutines.TimeoutCancellationException
+import mu.KotlinLogging
 import java.util.concurrent.atomic.AtomicBoolean
+
+private val logger = KotlinLogging.logger {}
 
 class MultiFieldCache<TKey: Any>(
     override val name: String,
@@ -48,7 +51,10 @@ class MultiFieldCache<TKey: Any>(
     }
 
     private suspend fun <T: Any> loadToCache(key: TKey, field: String, fetch: (suspend () -> T)): T {
-        return lockForLoad<T>(key, field).load(fetch())
+        val lock = lockForLoad<T>(key, field)
+        val value = fetch()
+        lock.load(value)
+        return value
     }
 
     @Throws(MutexLock.FailedAcquireException::class)
@@ -57,25 +63,37 @@ class MultiFieldCache<TKey: Any>(
         if (!lock.acquire(lockKey, timeout)) {
             throw MutexLock.FailedAcquireException
         }
-        setNotEvicted(key, field)
-        return KeyFieldCacheValueLoader(key, field, lockKey)
+        return PessimisticKeyFieldCacheValueLoader(key, field, setNotEvicted(key, field), lockKey)
     }
 
-    inner class KeyFieldCacheValueLoader<T: Any>(
-        private val key: TKey,
-        private val field: String,
+    suspend fun <T:Any> optimisticLockForLoad(key: TKey, field: String): CacheValueLoader<T> {
+        return OptimisticKeyFieldCacheValueLoader(key, field, setNotEvicted(key, field))
+    }
+
+    private suspend fun <T:Any> compareAndLoad(key: TKey, field: String, version: Long, value: T): LoadResult<T> {
+        return if (isNotEvicted(key, field, version)) {
+            val dataBytes = serializer.serialize(value)
+            repository.set(keys.key(key), keys.field(field), dataBytes, options.ttl, options.ttlTimeUnit)
+            metrics.incrementPutCount()
+            LoadResult(value)
+        } else {
+            repository.delete(keys.key(key), keys.field(field))
+            logger.info("optimistic lock failure occured on load, purged cached data. cache=$name, key=$key, field=$field")
+            LoadResult(value, success = false, isOptimisticLockFailure = true)
+        }
+    }
+
+    inner class PessimisticKeyFieldCacheValueLoader<T: Any>(
+        val key: TKey,
+        val field: String,
+        override val version: Long,
         private val lockKey: String
     ): CacheValueLoader<T> {
         private var loaded = AtomicBoolean(false)
-        override suspend fun load(value: T): T {
+        override suspend fun load(value: T): LoadResult<T> {
             if (loaded.compareAndSet(false, true)) {
                 return try {
-                    if (isNotEvicted(key, field)) {
-                        val dataBytes = serializer.serialize(value)
-                        repository.set(keys.key(key), keys.field(field), dataBytes, options.ttl, options.ttlTimeUnit)
-                        metrics.incrementPutCount()
-                    }
-                    value
+                    compareAndLoad(key, field, version, value)
                 } finally {
                     lock.release(lockKey)
                 }
@@ -91,6 +109,22 @@ class MultiFieldCache<TKey: Any>(
         }
     }
 
+    inner class OptimisticKeyFieldCacheValueLoader<T: Any>(
+        val key: TKey,
+        val field: String,
+        override val version: Long
+    ): CacheValueLoader<T> {
+        private var loaded = AtomicBoolean(false)
+        override suspend fun load(value: T): LoadResult<T> {
+            if (loaded.compareAndSet(false, true)) {
+                return compareAndLoad(key, field, version, value)
+            } else {
+                throw AlreadyLoadedException()
+            }
+        }
+
+        override suspend fun release() {}
+    }
 
     suspend fun <T: Any> get(key: TKey, field: String): T? {
         if (options.cacheMode == CacheMode.EVICTION_ONLY) {
@@ -235,6 +269,6 @@ class MultiFieldCache<TKey: Any>(
     }
 
     private suspend fun setEvicted(key: TKey) = repository.delete(keys.notEvicted(key))
-    private suspend fun setNotEvicted(key: TKey, field: String) = repository.set(keys.notEvicted(key), field, "1".toByteArray(), options.evictCheckTTL, options.evictCheckTimeUnit)
-    private suspend fun isNotEvicted(key: TKey, field: String) = repository.delete(keys.notEvicted(key), field)
+    private suspend fun setNotEvicted(key: TKey, field: String) = repository.incrBy(keys.notEvicted(key), field, 1, options.evictCheckTTL, options.evictCheckTimeUnit)
+    private suspend fun isNotEvicted(key: TKey, field: String, version: Long) = version == repository.incrBy(keys.notEvicted(key), field, 1, options.evictCheckTTL, options.evictCheckTimeUnit) - 1 //repository.delete(keys.notEvicted(key), field)
 }

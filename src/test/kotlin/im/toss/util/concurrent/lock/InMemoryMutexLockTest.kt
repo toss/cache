@@ -35,7 +35,7 @@ internal class InMemoryMutexLockTest {
         runBlocking {
             val lock = InMemoryMutexLock(1, InMemoryRepository())
             lock.acquire("hello") equalsTo true
-            delay(1000L)
+            delay(1200L)
             lock.acquire("hello") equalsTo true
         }
     }
