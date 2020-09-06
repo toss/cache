@@ -7,6 +7,7 @@ import java.util.*
 import java.util.concurrent.Executors
 
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 
 class InMemoryKeyFieldValueRepositoryTest {
     @Test
@@ -49,6 +50,28 @@ class InMemoryKeyFieldValueRepositoryTest {
                     stored equalsTo value.toByteArray()
                 }
             }
+        }
+    }
+
+    @Test
+    fun incrByTest() {
+        runBlocking {
+            val repository = InMemoryKeyFieldValueRepository(InMemoryRepository())
+
+            val counter = AtomicLong()
+            val threadPool = Executors.newFixedThreadPool(4).asCoroutineDispatcher()
+            withContext(threadPool) {
+                (1..8).map {
+                    async {
+                        (1..10000).forEach {
+                            counter.incrementAndGet()
+                            repository.incrBy("key", "value", 1, -1, TimeUnit.SECONDS)
+                        }
+                    }
+                }.awaitAll()
+            }
+            val value = repository.get("key", "value")!!.toString(Charsets.UTF_8).toLong()
+            value equalsTo counter.get()
         }
     }
 }

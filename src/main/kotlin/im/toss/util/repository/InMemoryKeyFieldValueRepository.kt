@@ -16,6 +16,14 @@ class InMemoryKeyFieldValueRepository(
         }
     }
 
+    override suspend fun incrBy(key: String, field: String, amount: Long, ttl: Long, unit: TimeUnit): Long {
+        return repository.hincrby(key, field, amount).also {
+            if (ttl > 0L) {
+                repository.expire(key, ttl, unit)
+            }
+        }
+    }
+
     override suspend fun expire(key: String, ttl: Long, unit: TimeUnit) {
         repository.expire(key, ttl, unit)
     }

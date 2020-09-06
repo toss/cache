@@ -87,6 +87,19 @@ class InMemoryRepository {
         map[field] = value
     }
 
+    fun hincrby(key: String, field: String, value: Long): Long = synchronized(this) {
+        val item = items.computeIfAbsent(key) {
+            Item(LinkedHashMap<String, ByteArray>())
+        }
+
+        @Suppress("UNCHECKED_CAST")
+        val map = item.value as LinkedHashMap<String, ByteArray>
+
+        val currentValue = map.computeIfAbsent(field) { "0".toByteArray(Charsets.UTF_8) }.toString(Charsets.UTF_8).toLong()
+        (currentValue + value).also { map[field] = it.toString().toByteArray(Charsets.UTF_8) }
+    }
+
+
     fun hdel(key: String, field: String): Boolean = synchronized(this) {
         val item = getItem(key) ?: return false
         @Suppress("UNCHECKED_CAST")
@@ -155,7 +168,7 @@ class InMemoryRepository {
         return removed
     }
 
-    class Item(initValue: Any, ttl: Long = -1L, timeUnit: TimeUnit = TimeUnit.MILLISECONDS, changed: ((next: Long) -> Unit)? = null) {
+   class Item(initValue: Any, ttl: Long = -1L, timeUnit: TimeUnit = TimeUnit.MILLISECONDS, changed: ((next: Long) -> Unit)? = null) {
         var value: Any = initValue
         var expire = time(ttl, timeUnit)
 

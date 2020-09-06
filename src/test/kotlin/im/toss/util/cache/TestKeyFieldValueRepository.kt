@@ -2,7 +2,9 @@ package im.toss.util.cache
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.registerKotlinModule
+import im.toss.util.repository.InMemoryKeyFieldValueRepository
 import im.toss.util.repository.KeyFieldValueRepository
+import io.mockk.InternalPlatformDsl.toStr
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import kotlin.math.max
@@ -50,6 +52,17 @@ class TestKeyFieldValueRepository : KeyFieldValueRepository {
         item.value[field] = value
         if (ttl > 0L) {
             item.expire(unit.toMillis(ttl))
+        }
+    }
+
+    override suspend fun incrBy(key: String, field: String, amount: Long, ttl: Long, unit: TimeUnit): Long = synchronized(this){
+        val item = items.getOrPut(key) { Item() }
+        val currentValue = item.value.computeIfAbsent(field) { "0".toByteArray(Charsets.UTF_8) }.toString(Charsets.UTF_8).toLong()
+        (currentValue + amount).also {
+            item.value[field] = it.toString().toByteArray(Charsets.UTF_8)
+            if (ttl > 0L) {
+                item.expire(unit.toMillis(ttl))
+            }
         }
     }
 

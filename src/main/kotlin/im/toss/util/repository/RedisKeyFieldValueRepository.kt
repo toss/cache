@@ -26,6 +26,15 @@ class RedisKeyFieldValueRepository(
         }
     }
 
+    override suspend fun incrBy(key: String, field: String, amount: Long, ttl: Long, unit: TimeUnit): Long =
+        runWithTimeout(readTimeoutMillis) {
+            commands.hincrby(key.toByteArray(), field.toByteArray(), amount).awaitSingle().also {
+                if (ttl > 0L) {
+                    commands.expire(key.toByteArray(), unit.toSeconds(ttl)).awaitSingle()
+                }
+            }
+       }
+
     override suspend fun expire(key: String, ttl: Long, unit: TimeUnit) {
         runWithTimeout(readTimeoutMillis) {
             commands.expire(key.toByteArray(), unit.toSeconds(ttl)).awaitSingle()
