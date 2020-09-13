@@ -10,6 +10,12 @@ plugins {
 
     id("com.palantir.git-version") version "0.11.0"
     id("com.adarshr.test-logger") version "1.6.0"
+
+    id("org.springframework.boot") version "2.3.3.RELEASE"
+    id("io.spring.dependency-management") version "1.0.10.RELEASE"
+
+    kotlin("jvm")
+    kotlin("plugin.spring") version Versions.kotlinVersion
 }
 
 apply {
@@ -20,13 +26,40 @@ val gitVersion: groovy.lang.Closure<Any> by extra
 version = gitVersion().toString().replaceFirst("([0-9]+\\.[0-9]+\\.[0-9](\\..*)?)".toRegex(), "$1");
 
 configure<JavaPluginConvention> {
-    group = "im.toss"
+    group = "im.toss.cache"
     sourceCompatibility = JavaVersion.VERSION_1_8
     targetCompatibility = JavaVersion.VERSION_1_8
 }
 
 dependencies {
     implementation(project(":cache-core"))
+
+    implementation("org.jetbrains.kotlin:kotlin-reflect")
+    implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8:${Versions.kotlinVersion}")
+
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:${Versions.kotlinCoroutinesVersion}")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-reactor:${Versions.kotlinCoroutinesVersion}")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-reactive:${Versions.kotlinCoroutinesVersion}")
+
+    implementation("org.springframework.boot:spring-boot-autoconfigure")
+    implementation("org.springframework.boot:spring-boot-actuator-autoconfigure")
+    implementation("io.micrometer:micrometer-core")
+
+    implementation("org.springframework:spring-webmvc")
+    implementation("org.apache.tomcat.embed:tomcat-embed-core")
+
+    implementation("org.springframework:spring-aop")
+    implementation("org.aspectj:aspectjweaver")
+
+    implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
+    implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310")
+
+    implementation("io.github.microutils:kotlin-logging:1.5.9")
+
+    testImplementation("org.springframework.boot:spring-boot-starter-web")
+    testImplementation("org.springframework.boot:spring-boot-starter-test") { exclude(group = "org.junit.vintage", module = "junit-vintage-engine") }
+    testImplementation("com.github.toss:assert-extensions:0.2.0")
+
 }
 
 jacoco {
@@ -94,6 +127,15 @@ tasks.javadoc {
         (options as StandardJavadocDocletOptions).addBooleanOption("html5", true)
     }
 }
+
+tasks.getByName("jar") {
+    enabled = true
+}
+
+tasks.getByName("bootJar") {
+    enabled = false
+}
+
 publishing {
     publications {
         create<MavenPublication>("maven") {

@@ -4,6 +4,7 @@ import im.toss.util.cache.resources.RedisClusterCacheResources
 import im.toss.util.data.serializer.Serializer
 import im.toss.util.cache.metrics.metrics
 import im.toss.util.cache.resources.InMemoryCacheResources
+import im.toss.util.data.serializer.ByteArraySerializer
 import io.lettuce.core.cluster.RedisClusterClient
 import io.micrometer.core.instrument.MeterRegistry
 import java.util.concurrent.ConcurrentHashMap
@@ -64,7 +65,7 @@ class CacheManager(
     private var keyFunction: Cache.KeyFunction = Cache.KeyFunction { name, key -> "cache:$name:$key" }
 
     private val resources = ConcurrentHashMap<String, CacheResources>()
-    private val serializers = ConcurrentHashMap<String, Serializer>()
+    private val serializers = ConcurrentHashMap<String, Serializer>(mapOf("ByteArraySerializer" to ByteArraySerializer))
     private val cacheInstances = ConcurrentHashMap<String, Cache>()
     private fun setKeyFunction(keyFunction: Cache.KeyFunction) {
         this.keyFunction = keyFunction

@@ -20,7 +20,7 @@ val gitVersion: groovy.lang.Closure<Any> by extra
 version = gitVersion().toString().replaceFirst("([0-9]+\\.[0-9]+\\.[0-9](\\..*)?)".toRegex(), "$1");
 
 configure<JavaPluginConvention> {
-    group = "im.toss"
+    group = "im.toss.cache"
     sourceCompatibility = JavaVersion.VERSION_1_8
     targetCompatibility = JavaVersion.VERSION_1_8
 }
