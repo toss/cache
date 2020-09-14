@@ -16,7 +16,7 @@ data class TestResponse(
 @RestController
 @RequestMapping("/test")
 class TestController {
-    @ResponseCacheSupport
+    @ResponseCacheSupport("default")
     @GetMapping("/get")
     fun get(
         @CacheKey @RequestHeader("user-no") userNo: Long,
@@ -25,7 +25,7 @@ class TestController {
         return TestResponse(index, lastUpdated = ZonedDateTime.now())
     }
 
-    @EvictCache
+    @EvictCache(["default"])
     @PostMapping("/evict")
     fun evict(
         @CacheKey @RequestHeader("user-no") userNo: Long
@@ -33,7 +33,7 @@ class TestController {
         return "OK"
     }
 
-    @ResponseCacheSupport
+    @ResponseCacheSupport("default")
     @GetMapping("/no-cache-key")
     fun noCacheKey(): String {
         return ZonedDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)

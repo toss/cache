@@ -16,7 +16,7 @@ private val logger = KotlinLogging.logger {}
 
 @Target(AnnotationTarget.FUNCTION)
 @Retention(AnnotationRetention.RUNTIME)
-annotation class ResponseCacheSupport(val groupId: String = "default")
+annotation class ResponseCacheSupport(val groupId: String)
 
 @Component
 @ConditionalOnBean(annotation = [EnableCacheSupport::class])

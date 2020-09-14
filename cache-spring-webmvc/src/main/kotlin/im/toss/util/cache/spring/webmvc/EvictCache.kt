@@ -15,7 +15,7 @@ private val logger = KotlinLogging.logger {}
 
 @Target(AnnotationTarget.FUNCTION)
 @Retention(AnnotationRetention.RUNTIME)
-annotation class EvictCache(vararg val groupId: String = ["default"])
+annotation class EvictCache(val groupId: Array<String>)
 
 @Component
 @ConditionalOnBean(annotation = [EnableCacheSupport::class])
