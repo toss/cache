@@ -1,6 +1,5 @@
 package im.toss.util.cache.spring.webmvc
 
-import im.toss.util.cache.spring.CacheGroupManager
 import org.springframework.context.annotation.Import
 
 @Target(AnnotationTarget.CLASS)

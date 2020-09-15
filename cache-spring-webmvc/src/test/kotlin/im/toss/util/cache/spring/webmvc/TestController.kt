@@ -16,24 +16,24 @@ data class TestResponse(
 @RestController
 @RequestMapping("/test")
 class TestController {
-    @ResponseCacheSupport
+    @ResponseCacheSupport("default")
     @GetMapping("/get")
     fun get(
-        @CacheKey @RequestHeader("user-no") userNo: Long,
-        @CacheField @RequestHeader("index") index: Long
+        @CacheKey("userNo") @RequestHeader("user-no") userNo: Long,
+        @CacheField("idx") @RequestHeader("index") index: Long
     ): TestResponse {
         return TestResponse(index, lastUpdated = ZonedDateTime.now())
     }
 
-    @EvictCache
+    @EvictCache(["default"])
     @PostMapping("/evict")
     fun evict(
-        @CacheKey @RequestHeader("user-no") userNo: Long
+        @CacheKey("userNo") @RequestHeader("user-no") userNo: Long
     ): String {
         return "OK"
     }
 
-    @ResponseCacheSupport
+    @ResponseCacheSupport("default")
     @GetMapping("/no-cache-key")
     fun noCacheKey(): String {
         return ZonedDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)

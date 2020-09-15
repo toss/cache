@@ -3,6 +3,7 @@ package im.toss.util.cache.spring
 import im.toss.SpringWebMvcTest
 import im.toss.test.equalsTo
 import im.toss.util.cache.cacheOptions
+import im.toss.util.cache.spring.webmvc.CacheGroupManager
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.context.annotation.Bean
