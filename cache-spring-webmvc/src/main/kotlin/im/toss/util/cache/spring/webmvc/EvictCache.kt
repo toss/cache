@@ -1,6 +1,5 @@
 package im.toss.util.cache.spring.webmvc
 
-import im.toss.util.cache.spring.CacheGroupManager
 import mu.KotlinLogging
 import org.aspectj.lang.ProceedingJoinPoint
 import org.aspectj.lang.annotation.Around
@@ -28,12 +27,12 @@ class EvictCacheAnnotationAspect(
         val definition = pjp.getMethodAnnotation<EvictCache>() ?: return pjp.proceed()
         val attributes = RequestContextHolder.currentRequestAttributes() as? ServletRequestAttributes ?: return pjp.proceed()
         val method = (pjp.signature as MethodSignature).method
-        val cacheKeyBuilder = CacheKeyBuilder.from(method)
-        if (cacheKeyBuilder.keys.isEmpty()) {
+        val cacheKey = CacheKey.getIdentifier(method)
+        if (cacheKey.isEmpty()) {
             logger.warn("ignored cache evict because the cache key definition not found.\nmethod: ${method}")
             return pjp.proceed()
         }
-        val key  = cacheKeyBuilder.buildKey(attributes.request)
+        val key  = cacheKey.get(attributes.request)
         logger.debug("EvictCache: groupId=\"${definition.groupId}\", cacheKey=\"${key}\"")
 
         return try {

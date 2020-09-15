@@ -19,8 +19,8 @@ class TestController {
     @ResponseCacheSupport("default")
     @GetMapping("/get")
     fun get(
-        @CacheKey @RequestHeader("user-no") userNo: Long,
-        @CacheField @RequestHeader("index") index: Long
+        @CacheKey("userNo") @RequestHeader("user-no") userNo: Long,
+        @CacheField("idx") @RequestHeader("index") index: Long
     ): TestResponse {
         return TestResponse(index, lastUpdated = ZonedDateTime.now())
     }
@@ -28,7 +28,7 @@ class TestController {
     @EvictCache(["default"])
     @PostMapping("/evict")
     fun evict(
-        @CacheKey @RequestHeader("user-no") userNo: Long
+        @CacheKey("userNo") @RequestHeader("user-no") userNo: Long
     ): String {
         return "OK"
     }

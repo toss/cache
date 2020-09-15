@@ -1,6 +1,5 @@
 package im.toss.util.cache.spring.webmvc
 
-import im.toss.util.cache.spring.CacheGroupManager
 import im.toss.util.data.container.Pack
 import mu.KotlinLogging
 import org.aspectj.lang.ProceedingJoinPoint
@@ -31,14 +30,15 @@ class ResponseCacheSupportAnnotationAspect(
         attributes.request.getBestMatchingPattern() ?: return pjp.proceed()
         val response = attributes.response as? CaptureHttpServletResponse ?: return pjp.proceed()
         val method = (pjp.signature as MethodSignature).method
-        val cacheKeyBuilder = CacheKeyBuilder.from(method)
-        if (cacheKeyBuilder.keys.isEmpty()) {
+        val cacheKey = CacheKey.getIdentifier(method)
+        if (cacheKey.isEmpty()) {
             logger.warn("ignored cache because the cache key definition not found.\nmethod: ${method}")
             return pjp.proceed()
         }
 
-        val key = cacheKeyBuilder.buildKey(attributes.request)
-        val field = cacheKeyBuilder.buildField(attributes.request)
+        val cacheField = CacheField.getIdentifier(method)
+        val key = cacheKey.get(attributes.request)
+        val field = cacheField.get(attributes.request)
 
         logger.debug("ResponseCacheSupport: groupId=\"${definition.groupId}\", cacheKey=\"${key}\", cacheField=\"${field}\"")
 

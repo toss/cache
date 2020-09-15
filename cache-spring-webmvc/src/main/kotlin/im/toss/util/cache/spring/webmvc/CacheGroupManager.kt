@@ -1,10 +1,10 @@
-package im.toss.util.cache.spring
+package im.toss.util.cache.spring.webmvc
 
 import im.toss.util.cache.CacheManager
 import im.toss.util.cache.MultiFieldCache
 import im.toss.util.cache.blocking.BlockingMultiFieldCache
 import im.toss.util.cache.cacheOptions
-import im.toss.util.cache.spring.webmvc.EnableCacheSupport
+import im.toss.util.cache.spring.CacheGroupDefinition
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean
 import org.springframework.stereotype.Component
 import java.util.concurrent.ConcurrentHashMap
@@ -34,4 +34,10 @@ class CacheGroupManager(
         blockingCacheGroups.computeIfAbsent(groupId) {
             get(groupId).blocking()
         }
+
+    fun evict(groupId: String, key: String) = getBlocking(groupId).evict(key)
+
+    fun cacheKey(context: Map<String, String>): String {
+        return context.entries.sortedBy { it.key }.joinToString(",") { "${it.key}=${it.value}" }
+    }
 }
