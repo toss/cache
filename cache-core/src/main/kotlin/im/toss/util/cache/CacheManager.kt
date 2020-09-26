@@ -1,5 +1,6 @@
 package im.toss.util.cache
 
+import im.toss.util.cache.metrics.CacheMetrics
 import im.toss.util.cache.resources.RedisClusterCacheResources
 import im.toss.util.data.serializer.Serializer
 import im.toss.util.cache.metrics.metrics
@@ -21,37 +22,39 @@ class CacheManager(
     }
 
     fun <TKey: Any> keyValueCache(
-        name: String,
+        namespaceId: String,
         serializerId: String? = null,
         lockAutoreleaseSeconds: Long = 10
     ): KeyValueCache<TKey> {
-        val namespace = getNamespace(name)
+        val namespace = getNamespace(namespaceId)
         val resources = getResources(namespace.resourceId)
         return KeyValueCache<TKey>(
-            name = name,
+            name = namespaceId,
             keyFunction = keyFunction,
             lock = resources.lock(lockAutoreleaseSeconds),
             repository = resources.keyFieldValueRepository(),
             serializer = getSerializer(serializerId),
-            options = namespace.options
-        ).metrics(meterRegistry)
+            options = namespace.options,
+            metrics = getMetrics(namespaceId)
+        )
     }
 
     fun <TKey: Any> multiFieldCache(
-        name: String,
+        namespaceId: String,
         serializerId: String? = null,
         lockAutoreleaseSeconds: Long = 10
     ): MultiFieldCache<TKey> {
-        val namespace = getNamespace(name)
+        val namespace = getNamespace(namespaceId)
         val resources = getResources(namespace.resourceId)
         return MultiFieldCache<TKey>(
-            name = name,
+            name = namespaceId,
             keyFunction = keyFunction,
             lock = resources.lock(lockAutoreleaseSeconds),
             repository = resources.keyFieldValueRepository(),
             serializer = getSerializer(serializerId),
-            options = namespace.options
-        ).metrics(meterRegistry)
+            options = namespace.options,
+            metrics = getMetrics(namespaceId)
+        )
     }
 
     private var keyFunction: Cache.KeyFunction = Cache.KeyFunction { name, key -> "cache:$name:$key" }
@@ -59,6 +62,8 @@ class CacheManager(
     private val resources = ConcurrentHashMap<String, CacheResources>()
     private val namespaces = ConcurrentHashMap<String, CacheNamespace>()
     private val serializers = ConcurrentHashMap<String, Serializer>(mapOf("ByteArraySerializer" to ByteArraySerializer))
+    private val metricises = ConcurrentHashMap<String, CacheMetrics>()
+
     private fun setKeyFunction(keyFunction: Cache.KeyFunction) {
         this.keyFunction = keyFunction
     }
@@ -81,11 +86,21 @@ class CacheManager(
             throw Exception("alread exists namespace: $namespaceId")
         }
 
-        namespaces[namespaceId] = namespace
+        namespaces.computeIfAbsent(namespaceId) {
+            metricises.computeIfAbsent(namespaceId) {
+                CacheMetrics(namespaceId).metrics(meterRegistry)
+            }
+            namespace
+        }
     }
 
     private fun getNamespace(namespaceId: String? = null): CacheNamespace {
         return namespaces[namespaceId ?: "default"]
+            ?: throw NoSuchElementException("namespace not exists: $namespaceId")
+    }
+
+    fun getMetrics(namespaceId: String? = null): CacheMetrics {
+        return metricises[namespaceId ?: "default"]
             ?: throw NoSuchElementException("namespace not exists: $namespaceId")
     }
 

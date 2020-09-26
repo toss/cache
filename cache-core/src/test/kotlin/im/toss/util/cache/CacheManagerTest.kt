@@ -104,4 +104,44 @@ internal class CacheManagerTest {
             cache2.get<String>("hello", "field") equalsTo "world"
         }
     }
+
+    @Test
+    fun `metrics are shared between the same namespace`() {
+        runBlocking {
+            val cacheManager = CacheManager(SimpleMeterRegistry()) {
+                keyFunction { name, key -> "$name:$key" }
+                inMemory("first")
+                serializer { StringSerializer }
+                namespace("hello") {
+                    CacheNamespace(
+                        resourceId = "first",
+                        options = cacheOptions(
+                            version = "1",
+                            cacheMode = CacheMode.NORMAL,
+                            ttl = 10
+                        )
+                    )
+                }
+            }
+            val metrics = cacheManager.getMetrics("hello")
+            val cache1 = cacheManager.keyValueCache<String>("hello")
+            val cache2 = cacheManager.multiFieldCache<String>("hello")
+            cache1.getOrLoad("1") { "value" } // miss, put
+            cache1.getOrLoad("1") { "value" } // hit
+            cache1.getOrLoad("1") { "value" } // hit
+
+            cache2.getOrLoad("1", "1") { "field1value" } // miss, put
+            cache2.getOrLoad("1", "1") { "field1value" } // hit
+            cache2.getOrLoad("1", "1") { "field1value" } // hit
+
+            cache1.getOrLoad("1") { "value2"} equalsTo "value" // hit
+            cache2.getOrLoad("1", "1") { "field1value2" } equalsTo "field1value" // hit
+
+            metrics.run {
+                missCount equalsTo 2L
+                putCount equalsTo 2L
+                hitCount equalsTo 6L
+            }
+        }
+    }
 }

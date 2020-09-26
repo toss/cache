@@ -23,7 +23,7 @@ class CacheGroupManager(
         cacheGroups.computeIfAbsent(groupId) {
             val groupDefinition = groups[groupId] ?: CacheGroupDefinition(groupId)
             cacheManager.multiFieldCache(
-                name = groupId,
+                namespaceId = groupId,
                 serializerId = "ByteArraySerializer",
                 resourceId = groupDefinition.resourceId,
                 options = groupDefinition.options ?: cacheOptions(ttl = 10)
