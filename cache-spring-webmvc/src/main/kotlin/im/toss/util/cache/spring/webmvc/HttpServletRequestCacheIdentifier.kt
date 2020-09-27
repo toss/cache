@@ -53,6 +53,10 @@ annotation class CacheKey(val keyName: String) {
             method.parameters.forEach { it.getAnnotation(CacheKey::class.java)?.run { HttpServletRequestValue.from(keyName, it) }?.run { add(this) } }
             this
         }
+
+        fun build(context: Map<String, String>): String {
+            return context.entries.sortedBy { it.key }.joinToString(",") { "${it.key}=${it.value}" }
+        }
     }
 }
 

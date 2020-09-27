@@ -5,7 +5,7 @@ import org.springframework.context.annotation.Import
 @Target(AnnotationTarget.CLASS)
 @Retention(AnnotationRetention.RUNTIME)
 @Import(
-    CacheGroupManager::class,
+    CacheConfiguration::class,
     ResponseCacheFilter::class,
     ResponseCacheSupportAnnotationAspect::class,
     EvictCacheAnnotationAspect::class

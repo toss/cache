@@ -1,5 +1,6 @@
 package im.toss.util.cache.spring.webmvc
 
+import im.toss.util.cache.CacheManager
 import im.toss.util.data.container.Pack
 import mu.KotlinLogging
 import org.aspectj.lang.ProceedingJoinPoint
@@ -15,13 +16,13 @@ private val logger = KotlinLogging.logger {}
 
 @Target(AnnotationTarget.FUNCTION)
 @Retention(AnnotationRetention.RUNTIME)
-annotation class ResponseCacheSupport(val groupId: String)
+annotation class ResponseCacheSupport(val namespaceId: String)
 
 @Component
 @ConditionalOnBean(annotation = [EnableCacheSupport::class])
 @Aspect
 class ResponseCacheSupportAnnotationAspect(
-    val cacheGroupManager: CacheGroupManager
+    val cacheManager: CacheManager
 ) {
     @Around("@annotation(im.toss.util.cache.spring.webmvc.ResponseCacheSupport)")
     fun endPoint(pjp: ProceedingJoinPoint): Any? {
@@ -40,10 +41,10 @@ class ResponseCacheSupportAnnotationAspect(
         val key = cacheKey.get(attributes.request)
         val field = cacheField.get(attributes.request)
 
-        logger.debug("ResponseCacheSupport: groupId=\"${definition.groupId}\", cacheKey=\"${key}\", cacheField=\"${field}\"")
+        logger.debug("ResponseCacheSupport: namespaceId=\"${definition.namespaceId}\", cacheKey=\"${key}\", cacheField=\"${field}\"")
 
         val cacheControl = attributes.request.parseHeadersForCache()
-        val cache = cacheGroupManager.getBlocking(definition.groupId)
+        val cache = cacheManager.multiFieldCache<String>(definition.namespaceId, "ByteArraySerializer").blocking
         val command = when {
             // 캐시 필드의 내용을 강제 로딩 & 저장 한다.
             cacheControl.isNeedsInvalidate -> {

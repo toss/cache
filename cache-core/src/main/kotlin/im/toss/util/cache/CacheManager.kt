@@ -8,6 +8,7 @@ import im.toss.util.cache.resources.InMemoryCacheResources
 import im.toss.util.data.serializer.ByteArraySerializer
 import io.lettuce.core.cluster.RedisClusterClient
 import io.micrometer.core.instrument.MeterRegistry
+import kotlinx.coroutines.runBlocking
 import java.util.concurrent.ConcurrentHashMap
 
 typealias CacheResourcesDsl = CacheManager.ResourcesDefinition.() -> Unit
@@ -78,6 +79,15 @@ class CacheManager(
             multiFieldCache<TKey>(namespaceId).copy(serializer = getSerializer(serializerId))
         } as MultiFieldCache<TKey>
     }
+
+    suspend fun <TKey: Any> evict(namespaceId: String, key: TKey) {
+        multiFieldCache<TKey>(namespaceId).evict(key)
+    }
+
+    fun <TKey: Any> evictBlocking(namespaceId: String, key: TKey) {
+        runBlocking { evict(namespaceId, key) }
+    }
+
 
     private var keyFunction: Cache.KeyFunction = Cache.KeyFunction { name, key -> "cache:$name:$key" }
 

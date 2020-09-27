@@ -6,7 +6,9 @@ import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.datatype.jdk8.Jdk8Module
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.module.kotlin.registerKotlinModule
-import im.toss.util.cache.spring.CacheGroupDefinition
+import im.toss.util.cache.CacheNamespace
+import im.toss.util.cache.CacheResourcesDsl
+import im.toss.util.data.serializer.StringSerializer
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.context.annotation.Primary
@@ -24,7 +26,12 @@ class TestConfiguration {
             .registerModule(Jdk8Module())
             .registerModule(JavaTimeModule())
 
+
     @Bean
-    fun defaultCacheGroup() = CacheGroupDefinition("default")
+    fun cacheResourceDefinition(): CacheResourcesDsl = {
+        inMemory()
+        namespace { CacheNamespace() }
+        serializer { StringSerializer }
+    }
 }
 
