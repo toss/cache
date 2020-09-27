@@ -22,39 +22,61 @@ class CacheManager(
     }
 
     fun <TKey: Any> keyValueCache(
-        namespaceId: String,
-        serializerId: String? = null,
-        lockAutoreleaseSeconds: Long = 10
+        namespaceId: String
     ): KeyValueCache<TKey> {
-        val namespace = getNamespace(namespaceId)
-        val resources = getResources(namespace.resourceId)
-        return KeyValueCache<TKey>(
-            name = namespaceId,
-            keyFunction = keyFunction,
-            lock = resources.lock(lockAutoreleaseSeconds),
-            repository = resources.keyFieldValueRepository(),
-            serializer = getSerializer(serializerId),
-            options = namespace.options,
-            metrics = getMetrics(namespaceId)
-        )
+        @Suppress("UNCHECKED_CAST")
+        return keyValueCaches.computeIfAbsent(namespaceId) {
+            val namespace = getNamespace(namespaceId)
+            val resources = getResources(namespace.resourceId)
+            KeyValueCache<TKey>(
+                name = namespaceId,
+                keyFunction = keyFunction,
+                lock = resources.lock(namespace.options.run { lockTimeoutTimeUnit.toSeconds(lockTimeout) }),
+                repository = resources.keyFieldValueRepository(),
+                serializer = getSerializer(namespace.serializerId),
+                options = namespace.options,
+                metrics = getMetrics(namespaceId)
+            )
+        } as KeyValueCache<TKey>
+    }
+
+    fun <TKey: Any> keyValueCache(
+        namespaceId: String,
+        serializerId: String
+    ): KeyValueCache<TKey> {
+        @Suppress("UNCHECKED_CAST")
+        return keyValueCacheWithSerializers.computeIfAbsent(namespaceId to serializerId) {
+            keyValueCache<TKey>(namespaceId).copy(serializer = getSerializer(serializerId))
+        } as KeyValueCache<TKey>
+    }
+
+    fun <TKey: Any> multiFieldCache(
+        namespaceId: String
+    ): MultiFieldCache<TKey> {
+        @Suppress("UNCHECKED_CAST")
+        return multiFieldCaches.computeIfAbsent(namespaceId) {
+            val namespace = getNamespace(namespaceId)
+            val resources = getResources(namespace.resourceId)
+            MultiFieldCache<TKey>(
+                name = namespaceId,
+                keyFunction = keyFunction,
+                lock = resources.lock(namespace.options.run { lockTimeoutTimeUnit.toSeconds(lockTimeout) }),
+                repository = resources.keyFieldValueRepository(),
+                serializer = getSerializer(namespace.serializerId),
+                options = namespace.options,
+                metrics = getMetrics(namespaceId)
+            )
+        } as MultiFieldCache<TKey>
     }
 
     fun <TKey: Any> multiFieldCache(
         namespaceId: String,
-        serializerId: String? = null,
-        lockAutoreleaseSeconds: Long = 10
+        serializerId: String
     ): MultiFieldCache<TKey> {
-        val namespace = getNamespace(namespaceId)
-        val resources = getResources(namespace.resourceId)
-        return MultiFieldCache<TKey>(
-            name = namespaceId,
-            keyFunction = keyFunction,
-            lock = resources.lock(lockAutoreleaseSeconds),
-            repository = resources.keyFieldValueRepository(),
-            serializer = getSerializer(serializerId),
-            options = namespace.options,
-            metrics = getMetrics(namespaceId)
-        )
+        @Suppress("UNCHECKED_CAST")
+        return multiFieldCacheWithSerializers.computeIfAbsent(namespaceId to serializerId) {
+            multiFieldCache<TKey>(namespaceId).copy(serializer = getSerializer(serializerId))
+        } as MultiFieldCache<TKey>
     }
 
     private var keyFunction: Cache.KeyFunction = Cache.KeyFunction { name, key -> "cache:$name:$key" }
@@ -63,6 +85,10 @@ class CacheManager(
     private val namespaces = ConcurrentHashMap<String, CacheNamespace>()
     private val serializers = ConcurrentHashMap<String, Serializer>(mapOf("ByteArraySerializer" to ByteArraySerializer))
     private val metricises = ConcurrentHashMap<String, CacheMetrics>()
+    private val multiFieldCaches = ConcurrentHashMap<String, MultiFieldCache<*>>()
+    private val multiFieldCacheWithSerializers = ConcurrentHashMap<Pair<String, String>, MultiFieldCache<*>>()
+    private val keyValueCaches = ConcurrentHashMap<String, KeyValueCache<*>>()
+    private val keyValueCacheWithSerializers = ConcurrentHashMap<Pair<String, String>, KeyValueCache<*>>()
 
     private fun setKeyFunction(keyFunction: Cache.KeyFunction) {
         this.keyFunction = keyFunction

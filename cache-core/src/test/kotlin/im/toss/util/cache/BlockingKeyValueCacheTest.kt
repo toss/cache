@@ -30,7 +30,7 @@ class BlockingKeyValueCacheTest {
             coldTimeUnit = TimeUnit.MILLISECONDS,
             applyTtlIfHit = applyTtlIfHit
         )
-    ).blocking()
+    ).blocking
 
     // timeout 테스트
     @TestFactory

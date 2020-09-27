@@ -12,8 +12,8 @@ class CacheOptions(
     var applyTtlIfHit: Boolean = true
     var coldTime: Long = -1L
     var coldTimeUnit: TimeUnit = TimeUnit.SECONDS
-    var evictCheckTTL: Long = 30L
-    var evictCheckTimeUnit: TimeUnit = TimeUnit.SECONDS
+    var lockTimeout: Long = 30L
+    var lockTimeoutTimeUnit: TimeUnit = TimeUnit.SECONDS
 }
 
 fun cacheOptions(
@@ -24,8 +24,8 @@ fun cacheOptions(
     applyTtlIfHit: Boolean? = null,
     coldTime: Long? = null,
     coldTimeUnit: TimeUnit? = null,
-    evictCheckTTL: Long? = null,
-    evictCheckTimeUnit: TimeUnit? = null,
+    lockTimeout: Long? = null,
+    lockTImeoutTimeUnit: TimeUnit? = null,
     cacheFailurePolicy: CacheFailurePolicy? = null
 ): CacheOptions {
     val options = if (cacheFailurePolicy != null) {
@@ -41,8 +41,8 @@ fun cacheOptions(
     if (applyTtlIfHit != null) options.applyTtlIfHit = applyTtlIfHit
     if (coldTime != null) options.coldTime = coldTime
     if (coldTimeUnit != null) options.coldTimeUnit = coldTimeUnit
-    if (evictCheckTTL != null) options.evictCheckTTL = evictCheckTTL
-    if (evictCheckTimeUnit != null) options.evictCheckTimeUnit = evictCheckTimeUnit
+    if (lockTimeout != null) options.lockTimeout = lockTimeout
+    if (lockTImeoutTimeUnit != null) options.lockTimeoutTimeUnit = lockTImeoutTimeUnit
 
     return options
 }

@@ -23,5 +23,8 @@ class TestConfiguration {
             .registerKotlinModule()
             .registerModule(Jdk8Module())
             .registerModule(JavaTimeModule())
+
+    @Bean
+    fun defaultCacheGroup() = CacheGroupDefinition("default")
 }
 

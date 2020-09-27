@@ -15,7 +15,7 @@ class CacheGroupDefinitionTest: SpringWebMvcTest() {
 
     @Test
     fun test() {
-        cacheGroupManager.groups.keys equalsTo setOf("group1", "group2")
+        cacheGroupManager.groups.keys equalsTo setOf("default", "group1", "group2")
         (cacheGroupManager.groups["group1"] ?: error("")).options!!.ttl equalsTo 10L
         (cacheGroupManager.groups["group2"] ?: error("")).options equalsTo null
     }

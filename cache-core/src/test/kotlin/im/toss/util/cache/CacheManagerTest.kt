@@ -144,4 +144,31 @@ internal class CacheManagerTest {
             }
         }
     }
+
+    @Test
+    fun `use a different serializer in the same namespace`() {
+        runBlocking {
+            val cacheManager = CacheManager(SimpleMeterRegistry()) {
+                keyFunction { name, key -> "$name:$key" }
+                inMemory("first")
+                serializer { StringSerializer }
+                namespace("hello") {
+                    CacheNamespace(
+                        resourceId = "first",
+                        options = cacheOptions(
+                            version = "1",
+                            cacheMode = CacheMode.NORMAL,
+                            ttl = 10
+                        )
+                    )
+                }
+            }
+
+            val cache1 = cacheManager.keyValueCache<String>("hello")
+            cache1.getOrLoad("key1") { "value1" }
+
+            val cache2 = cacheManager.keyValueCache<String>("hello", "ByteArraySerializer")
+            cache2.get<ByteArray>("key1") equalsTo "value1".toByteArray()
+        }
+    }
 }

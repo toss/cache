@@ -1,9 +1,9 @@
 package im.toss.util.cache.spring.webmvc
 
 import im.toss.util.cache.CacheManager
+import im.toss.util.cache.CacheNamespace
 import im.toss.util.cache.MultiFieldCache
 import im.toss.util.cache.blocking.BlockingMultiFieldCache
-import im.toss.util.cache.cacheOptions
 import im.toss.util.cache.spring.CacheGroupDefinition
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean
 import org.springframework.stereotype.Component
@@ -16,24 +16,23 @@ class CacheGroupManager(
     cacheGroupDefinitions: List<CacheGroupDefinition>
 ) {
     val groups = cacheGroupDefinitions.associateBy { it.groupId }
-    private val cacheGroups = ConcurrentHashMap<String, MultiFieldCache<String>>()
-    private val blockingCacheGroups = ConcurrentHashMap<String, BlockingMultiFieldCache<String>>()
 
-    fun get(groupId: String): MultiFieldCache<String> =
-        cacheGroups.computeIfAbsent(groupId) {
-            val groupDefinition = groups[groupId] ?: CacheGroupDefinition(groupId)
-            cacheManager.multiFieldCache(
-                namespaceId = groupId,
-                serializerId = "ByteArraySerializer",
-                resourceId = groupDefinition.resourceId,
-                options = groupDefinition.options ?: cacheOptions(ttl = 10)
-            )
+    init {
+        cacheManager.resources {
+            cacheGroupDefinitions.forEach {
+                namespace(it.groupId) {
+                    CacheNamespace(
+                        resourceId = it.resourceId ?: "default",
+                        serializerId = "ByteArraySerializer"
+                    )
+                }
+            }
         }
+    }
 
-    fun getBlocking(groupId: String): BlockingMultiFieldCache<String> =
-        blockingCacheGroups.computeIfAbsent(groupId) {
-            get(groupId).blocking()
-        }
+    fun get(namespaceId: String): MultiFieldCache<String> = cacheManager.multiFieldCache(namespaceId, "ByteArraySerializer")
+
+    fun getBlocking(namespaceId: String): BlockingMultiFieldCache<String> = get(namespaceId).blocking
 
     fun evict(groupId: String, key: String) = getBlocking(groupId).evict(key)
 
