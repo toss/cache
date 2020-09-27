@@ -19,8 +19,6 @@ class HttpServletRequestCacheIdentifierTest: SpringWebMvcTest() {
     @Autowired
     lateinit var servletContext: ServletContext
 
-    @Autowired lateinit var cacheGroupManager: CacheGroupManager
-
     @Test
     fun parseDefinition() {
         CacheKey.getIdentifier(::get1.javaMethod!!) equalsTo HttpServletRequestCacheIdentifier(
@@ -142,7 +140,7 @@ class HttpServletRequestCacheIdentifierTest: SpringWebMvcTest() {
 
     @Test
     fun cacheKeyTest() {
-        cacheGroupManager.cacheKey(mapOf("x-user-id" to "hello")) equalsTo "x-user-id=hello"
+        CacheKey.build(mapOf("x-user-id" to "hello")) equalsTo "x-user-id=hello"
     }
 
     @TestFactory

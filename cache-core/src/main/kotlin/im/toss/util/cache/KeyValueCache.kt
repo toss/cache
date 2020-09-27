@@ -7,18 +7,18 @@ import im.toss.util.concurrent.lock.MutexLock
 import im.toss.util.data.serializer.Serializer
 import im.toss.util.repository.KeyFieldValueRepository
 
-class KeyValueCache<TKey: Any>(
+data class KeyValueCache<TKey: Any>(
     override val name: String,
-    keyFunction: Cache.KeyFunction,
-    lock: MutexLock,
-    repository: KeyFieldValueRepository,
-    serializer: Serializer,
+    val keyFunction: Cache.KeyFunction,
+    val lock: MutexLock,
+    val repository: KeyFieldValueRepository,
+    val serializer: Serializer,
     val options: CacheOptions,
     private val metrics: CacheMetrics = CacheMetrics(name)
 ) : Cache, CacheMeter by metrics {
-    fun blocking() = BlockingKeyValueCache(this)
+    val blocking by lazy { BlockingKeyValueCache(this) }
 
-    private val cache = MultiFieldCache<TKey>(name, keyFunction, lock, repository, serializer, options, "KeyValueCache", metrics)
+    private val cache by lazy { MultiFieldCache<TKey>(name, keyFunction, lock, repository, serializer, options, metrics, "KeyValueCache") }
     private val field = ".value"
 
     suspend fun evict(key: TKey) = cache.evict(key)
