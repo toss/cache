@@ -1,5 +1,6 @@
 package im.toss.util.cache
 
+import com.fasterxml.jackson.annotation.JsonProperty
 import kotlinx.coroutines.TimeoutCancellationException
 import mu.KotlinLogging
 import java.lang.Exception
@@ -13,6 +14,7 @@ enum class CacheFailurePolicy {
     /**
      * 예외를 발생시킨다.
      */
+    @JsonProperty("throw")
     ThrowException,
 
     /**
@@ -22,6 +24,7 @@ enum class CacheFailurePolicy {
      * origin에 변경이 발생했을 때, 장애 해소 이후 캐시 저장소가 이전 상태로 복구되면 데이터 불일치가 발생한다.
      * 장애 이후에는, 캐시 저장소를 비워주거나, 캐시 버전업을 권장한다.
      */
+    @JsonProperty("fallback")
     FallbackToOrigin
 }
 

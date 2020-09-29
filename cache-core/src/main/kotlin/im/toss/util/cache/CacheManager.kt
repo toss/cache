@@ -6,6 +6,7 @@ import im.toss.util.data.serializer.Serializer
 import im.toss.util.cache.metrics.metrics
 import im.toss.util.cache.resources.InMemoryCacheResources
 import im.toss.util.data.serializer.ByteArraySerializer
+import im.toss.util.properties.InheritableProperties
 import io.lettuce.core.cluster.RedisClusterClient
 import io.micrometer.core.instrument.MeterRegistry
 import kotlinx.coroutines.runBlocking
@@ -17,6 +18,21 @@ class CacheManager(
     private val meterRegistry: MeterRegistry,
     resourcesDsl: CacheResourcesDsl? = null
 ) {
+    fun loadProperties(properties: Map<String, String>, prefix: String? = null) {
+        val props = InheritableProperties(properties, prefix)
+        val namespaces = props.instantiates<CacheNamespace>(
+            path = "toss.cache.namespace",
+            parentsPath = "toss.cache.preset.namespace",
+            parentFieldName = "preset"
+        )
+
+        resources {
+            namespaces.forEach { (id, namespace) ->
+                namespace(id) { namespace }
+            }
+       }
+    }
+
     fun resources(dsl: CacheResourcesDsl): CacheManager {
         dsl(ResourcesDefinition(this))
         return this
@@ -32,7 +48,7 @@ class CacheManager(
             KeyValueCache<TKey>(
                 name = namespaceId,
                 keyFunction = keyFunction,
-                lock = resources.lock(namespace.options.run { lockTimeoutTimeUnit.toSeconds(lockTimeout) }),
+                lock = resources.lock(namespace.options.run { lockTimeout.seconds }),
                 repository = resources.keyFieldValueRepository(),
                 serializer = getSerializer(namespace.serializerId),
                 options = namespace.options,
@@ -61,7 +77,7 @@ class CacheManager(
             MultiFieldCache<TKey>(
                 name = namespaceId,
                 keyFunction = keyFunction,
-                lock = resources.lock(namespace.options.run { lockTimeoutTimeUnit.toSeconds(lockTimeout) }),
+                lock = resources.lock(namespace.options.run { lockTimeout.seconds }),
                 repository = resources.keyFieldValueRepository(),
                 serializer = getSerializer(namespace.serializerId),
                 options = namespace.options,
@@ -130,7 +146,7 @@ class CacheManager(
         }
     }
 
-    private fun getNamespace(namespaceId: String? = null): CacheNamespace {
+    fun getNamespace(namespaceId: String? = null): CacheNamespace {
         return namespaces[namespaceId ?: "default"]
             ?: throw NoSuchElementException("namespace not exists: $namespaceId")
     }
