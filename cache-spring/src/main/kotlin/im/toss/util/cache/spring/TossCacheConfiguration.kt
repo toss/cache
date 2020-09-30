@@ -1,4 +1,4 @@
-package im.toss.util.cache.spring.webmvc
+package im.toss.util.cache.spring
 
 import im.toss.util.cache.CacheManager
 import im.toss.util.cache.CacheResourcesDsl
@@ -8,13 +8,15 @@ import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 
 @Configuration
-class CacheConfiguration {
+class TossCacheConfiguration {
     @Bean
     @ConditionalOnMissingBean
     fun tossCacheManager(
         meterRegistry: MeterRegistry,
+        tossCacheProperties: TossCacheProperties,
         dsl: List<CacheResourcesDsl>
     ) = CacheManager(meterRegistry).also { cacheManager ->
+        cacheManager.loadProperties(tossCacheProperties.cache, "toss.cache")
         dsl.forEach { cacheManager.resources(it) }
     }
 }

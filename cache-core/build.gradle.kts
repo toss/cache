@@ -39,10 +39,13 @@ dependencies {
     implementation("com.esotericsoftware:kryo:4.0.2")
     implementation("commons-io:commons-io:2.6")
 
-    testImplementation("com.fasterxml.jackson.core:jackson-annotations:2.9.0")
-    testImplementation("com.fasterxml.jackson.core:jackson-core:2.9.9")
-    testImplementation("com.fasterxml.jackson.core:jackson-databind:2.9.9")
-    testImplementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.9.9")
+    implementation("com.fasterxml.jackson.core:jackson-annotations:2.11.2")
+    implementation("com.fasterxml.jackson.core:jackson-core:2.11.2")
+    implementation("com.fasterxml.jackson.core:jackson-databind:2.11.2")
+    implementation("com.fasterxml.jackson.datatype:jackson-datatype-jdk8:2.11.2")
+    implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.11.2")
+    implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.11.2")
+    implementation("com.fasterxml.jackson.module:jackson-module-parameter-names:2.11.2")
 
     testImplementation("org.junit.jupiter:junit-jupiter-api:5.5.1")
     testImplementation("org.junit.jupiter:junit-jupiter-engine:5.5.1")

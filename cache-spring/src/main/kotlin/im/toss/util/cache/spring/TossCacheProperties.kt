@@ -5,6 +5,6 @@ import org.springframework.stereotype.Component
 
 @Component
 @ConfigurationProperties(prefix = "toss")
-class TossCacheProperties {
-    lateinit var cache: Map<String, String>
-}
+class TossCacheProperties(
+    val cache: Map<String, String>
+)

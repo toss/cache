@@ -1,0 +1,20 @@
+app.id: test-application
+
+toss.cache:
+  resource:
+    default:
+      type: in-memory
+      cache-key:
+        prefix: ${app.id}
+
+  namespace:
+    hello:
+      resource-id: default
+      options:
+        version: 1
+        cache-mode: normal
+        ttl: PT10S
+        apply-ttl-if-hit: true
+        cold-time: PT1S
+        lock-timeout: PT30S
+        cache-failure-policy: fallback
