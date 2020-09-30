@@ -1,15 +1,14 @@
-package im.toss.util.cache.spring.webmvc
+package im.toss.util.cache.spring
 
 import im.toss.util.cache.CacheManager
 import im.toss.util.cache.CacheResourcesDsl
-import im.toss.util.cache.spring.TossCacheProperties
 import io.micrometer.core.instrument.MeterRegistry
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 
 @Configuration
-class CacheConfiguration {
+class TossCacheConfiguration {
     @Bean
     @ConditionalOnMissingBean
     fun tossCacheManager(

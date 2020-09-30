@@ -33,7 +33,6 @@ configure<JavaPluginConvention> {
 
 dependencies {
     implementation(project(":cache-core"))
-    implementation(project(":cache-spring"))
 
     implementation("org.jetbrains.kotlin:kotlin-reflect")
     implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8:${Versions.kotlinVersion}")
@@ -46,18 +45,11 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-actuator-autoconfigure")
     implementation("io.micrometer:micrometer-core")
 
-    implementation("org.springframework:spring-webmvc")
-    implementation("org.apache.tomcat.embed:tomcat-embed-core")
-
-    implementation("org.springframework:spring-aop")
-    implementation("org.aspectj:aspectjweaver")
-
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
     implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310")
 
     implementation("io.github.microutils:kotlin-logging:1.5.9")
 
-    testImplementation("org.springframework.boot:spring-boot-starter-web")
     testImplementation("org.springframework.boot:spring-boot-starter-test") { exclude(group = "org.junit.vintage", module = "junit-vintage-engine") }
     testImplementation("com.github.toss:assert-extensions:0.2.0")
 
@@ -141,7 +133,7 @@ publishing {
     publications {
         create<MavenPublication>("maven") {
             groupId = "im.toss.cache"
-            artifactId = "cache-spring-webmvc"
+            artifactId = "cache-spring"
             from(components["java"])
             artifact(tasks["sourcesJar"])
             artifact(tasks["javadocJar"])

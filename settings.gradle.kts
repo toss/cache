@@ -1,4 +1,5 @@
 include("cache-core")
+include("cache-spring")
 include("cache-spring-webmvc")
 
 

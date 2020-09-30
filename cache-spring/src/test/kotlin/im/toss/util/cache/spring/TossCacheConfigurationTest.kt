@@ -1,13 +1,14 @@
-package im.toss.util.cache.spring.webmvc
+package im.toss.util.cache.spring
 
-import im.toss.SpringWebMvcTest
 import im.toss.test.equalsTo
 import im.toss.util.cache.*
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.boot.test.context.SpringBootTest
 import java.time.Duration
 
-internal class CacheConfigurationTest: SpringWebMvcTest() {
+@SpringBootTest
+internal class TossCacheConfigurationTest {
     @Autowired
     lateinit var cacheManager: CacheManager
 
