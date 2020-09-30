@@ -4,6 +4,7 @@ import im.toss.util.cache.CacheManager
 import im.toss.util.cache.CacheResourcesDsl
 import io.micrometer.core.instrument.MeterRegistry
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
+import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 
@@ -19,4 +20,8 @@ class TossCacheConfiguration {
         cacheManager.loadProperties(tossCacheProperties.cache, "toss.cache")
         dsl.forEach { cacheManager.resources(it) }
     }
+
+    @Bean
+    @ConfigurationProperties(prefix = "toss", ignoreInvalidFields = true, ignoreUnknownFields = true)
+    fun tossCacheProperties() = TossCacheProperties()
 }
