@@ -9,21 +9,22 @@ import im.toss.util.data.serializer.Serializer
 import im.toss.util.repository.KeyFieldValueRepository
 import kotlinx.coroutines.TimeoutCancellationException
 import mu.KotlinLogging
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 private val logger = KotlinLogging.logger {}
 
-class MultiFieldCache<TKey: Any>(
+data class MultiFieldCache<TKey: Any>(
     override val name: String,
-    keyFunction: Cache.KeyFunction,
-    private val lock: MutexLock,
-    private val repository: KeyFieldValueRepository,
-    private val serializer: Serializer,
+    val keyFunction: Cache.KeyFunction,
+    val lock: MutexLock,
+    val repository: KeyFieldValueRepository,
+    val serializer: Serializer,
     val options: CacheOptions,
-    private val typeName: String = "MultiFieldCache",
-    private val metrics: CacheMetrics = CacheMetrics(name)
+    private val metrics: CacheMetrics = CacheMetrics(name),
+    private val typeName: String = "MultiFieldCache"
 ) : Cache, CacheMeter by metrics {
-    fun blocking() = BlockingMultiFieldCache(this)
+    val blocking by lazy { BlockingMultiFieldCache(this) }
 
     private val keys = Keys<TKey>(name, keyFunction, options)
 
@@ -73,7 +74,7 @@ class MultiFieldCache<TKey: Any>(
     private suspend fun <T:Any> compareAndLoad(key: TKey, field: String, version: Long, value: T): LoadResult<T> {
         return if (isNotEvicted(key, field, version)) {
             val dataBytes = serializer.serialize(value)
-            repository.set(keys.key(key), keys.field(field), dataBytes, options.ttl, options.ttlTimeUnit)
+            repository.set(keys.key(key), keys.field(field), dataBytes, options.ttl.toMillis(), TimeUnit.MILLISECONDS)
             metrics.incrementPutCount()
             LoadResult(value)
         } else {
@@ -139,8 +140,8 @@ class MultiFieldCache<TKey: Any>(
                 }
                 else -> {
                     metrics.incrementHitCount()
-                    if (options.applyTtlIfHit && options.ttl > 0L) {
-                        repository.expire(keys.key(key), options.ttl, options.ttlTimeUnit)
+                    if (options.applyTtlIfHit && options.ttl.toMillis()> 0L) {
+                        repository.expire(keys.key(key), options.ttl.toMillis(), TimeUnit.MILLISECONDS)
                     }
                     cached
                 }
@@ -172,8 +173,8 @@ class MultiFieldCache<TKey: Any>(
                     }
                     else -> {
                         metrics.incrementHitCount()
-                        if (options.applyTtlIfHit && options.ttl > 0L) {
-                            repository.expire(keys.key(key), options.ttl, options.ttlTimeUnit)
+                        if (options.applyTtlIfHit && options.ttl.toMillis()> 0L) {
+                            repository.expire(keys.key(key), options.ttl.toMillis(), TimeUnit.MILLISECONDS)
                         }
                         cached
                     }
@@ -206,8 +207,8 @@ class MultiFieldCache<TKey: Any>(
                     }
                     else -> {
                         metrics.incrementHitCount()
-                        if (options.applyTtlIfHit && options.ttl > 0L) {
-                            repository.expire(keys.key(key), options.ttl, options.ttlTimeUnit)
+                        if (options.applyTtlIfHit && options.ttl.toMillis() > 0L) {
+                            repository.expire(keys.key(key), options.ttl.toMillis(), TimeUnit.MILLISECONDS)
                         }
                         ResultGetOrLockForLoad(cached)
                     }
@@ -253,12 +254,12 @@ class MultiFieldCache<TKey: Any>(
     }
 
     private fun useColdTime(): Boolean {
-        return options.coldTime > 0L
+        return options.coldTime.toMillis() > 0L
     }
 
     private suspend fun setColdTime(key: TKey) {
         if (useColdTime()) {
-            lock.acquire(keys.cold(key), options.coldTime, options.coldTimeUnit)
+            lock.acquire(keys.cold(key), options.coldTime.toMillis(), TimeUnit.MILLISECONDS)
         }
     }
 
@@ -269,6 +270,6 @@ class MultiFieldCache<TKey: Any>(
     }
 
     private suspend fun setEvicted(key: TKey) = repository.delete(keys.notEvicted(key))
-    private suspend fun setNotEvicted(key: TKey, field: String) = repository.incrBy(keys.notEvicted(key), field, 1, options.evictCheckTTL, options.evictCheckTimeUnit)
-    private suspend fun isNotEvicted(key: TKey, field: String, version: Long) = version == repository.incrBy(keys.notEvicted(key), field, 1, options.evictCheckTTL, options.evictCheckTimeUnit) - 1 //repository.delete(keys.notEvicted(key), field)
+    private suspend fun setNotEvicted(key: TKey, field: String) = repository.incrBy(keys.notEvicted(key), field, 1, options.lockTimeout.toMillis(), TimeUnit.MILLISECONDS)
+    private suspend fun isNotEvicted(key: TKey, field: String, version: Long) = version == repository.incrBy(keys.notEvicted(key), field, 1, options.lockTimeout.toMillis(), TimeUnit.MILLISECONDS) - 1
 }

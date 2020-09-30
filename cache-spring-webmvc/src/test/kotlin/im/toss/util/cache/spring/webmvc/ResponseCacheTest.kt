@@ -4,6 +4,7 @@ import im.toss.SpringWebMvcTest
 import im.toss.request
 import im.toss.test.doesNotEqualTo
 import im.toss.test.equalsTo
+import im.toss.util.cache.CacheManager
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.http.HttpMethod
@@ -13,7 +14,7 @@ import java.time.ZonedDateTime
 
 class ResponseCacheTest: SpringWebMvcTest() {
     @Autowired
-    lateinit var cacheGroupManager: CacheGroupManager
+    lateinit var cacheManager: CacheManager
 
     @Test
     fun `캐시에 응답을 적재하고, 다시 요청하면 캐싱된 응답을 한다`() {
@@ -74,7 +75,7 @@ class ResponseCacheTest: SpringWebMvcTest() {
     }
 
     @Test
-    fun `cacheGroupManager로 evict할 수 있다`() {
+    fun `cacheManager로 evict할 수 있다`() {
         val headers = mapOf(
             "content-type" to "application/json",
             "user-no" to "1"
@@ -82,9 +83,8 @@ class ResponseCacheTest: SpringWebMvcTest() {
 
         val result1 = client.request<TestResponse>(path = "/test/get", headers = headers + mapOf("index" to "1"))
         Thread.sleep(1000)
-        cacheGroupManager.evict("default", "userNo=1")
+        cacheManager.evictBlocking("default", "userNo=1")
         val result2 = client.request<TestResponse>(path = "/test/get", headers = headers + mapOf("index" to "1"))
         result1.body doesNotEqualTo result2.body
     }
-
 }

@@ -1,5 +1,6 @@
 package im.toss.util.cache.spring.webmvc
 
+import im.toss.util.cache.CacheManager
 import mu.KotlinLogging
 import org.aspectj.lang.ProceedingJoinPoint
 import org.aspectj.lang.annotation.Around
@@ -20,7 +21,7 @@ annotation class EvictCache(val groupId: Array<String>)
 @ConditionalOnBean(annotation = [EnableCacheSupport::class])
 @Aspect
 class EvictCacheAnnotationAspect(
-    val cacheGroupManager: CacheGroupManager
+    val cacheManager: CacheManager
 ) {
     @Around("@annotation(im.toss.util.cache.spring.webmvc.EvictCache)")
     fun endPoint(pjp: ProceedingJoinPoint): Any? {
@@ -40,7 +41,7 @@ class EvictCacheAnnotationAspect(
         } finally {
             definition.groupId.forEach {
                 try {
-                    cacheGroupManager.getBlocking(it).evict(key)
+                    cacheManager.multiFieldCache<String>(it, "ByteArraySerializer").blocking.evict(key)
                 } catch (e: Throwable) {
                     logger.warn("failed to evict cache: groupId=\"${definition.groupId}\", cacheKey=\"${key}\"")
                 }
