@@ -5,6 +5,7 @@ import im.toss.util.cache.metrics.CacheMeter
 import im.toss.util.cache.metrics.CacheMetrics
 import im.toss.util.concurrent.lock.MutexLock
 import im.toss.util.concurrent.lock.runOrRetry
+import im.toss.util.coroutine.runWithTimeout
 import im.toss.util.data.serializer.Serializer
 import im.toss.util.repository.KeyFieldValueRepository
 import kotlinx.coroutines.TimeoutCancellationException
@@ -31,31 +32,37 @@ data class MultiFieldCache<TKey: Any>(
     suspend fun evict(key: TKey) {
         metrics.incrementEvictCount()
         setColdTime(key)
-        setEvicted(key)
+        setModified(key)
         repository.delete(keys.key(key))
     }
 
     suspend fun <T: Any> load(key: TKey, field: String, fetch: (suspend () -> T)) {
-        if (options.cacheMode == CacheMode.EVICTION_ONLY) {
-            evict(key)
-        } else {
-            try {
-                runOrRetry {
-                    loadToCache(key, field, fetch)
+        runWithTimeout(options.operationTimeout.toMillis()) {
+            if (options.cacheMode == CacheMode.EVICTION_ONLY) {
+                evict(key)
+            } else {
+                try {
+                    runOrRetry {
+                        loadToCache(key, field, fetch)
+                    }
+                } catch (e: Throwable) {
+                    options.cacheFailurePolicy.handle(
+                        "$typeName.load(): exception occured on load: cache=$name, key=$key, field=$field", e
+                    )
                 }
-            } catch (e: Throwable) {
-                options.cacheFailurePolicy.handle(
-                    "$typeName.load(): exception occured on load: cache=$name, key=$key, field=$field", e
-                )
             }
         }
     }
 
     private suspend fun <T: Any> loadToCache(key: TKey, field: String, fetch: (suspend () -> T)): T {
         val lock = lockForLoad<T>(key, field)
-        val value = fetch()
-        lock.load(value)
-        return value
+        try {
+            val value = fetch()
+            lock.load(value)
+            return value
+        } finally {
+            lock.release()
+        }
     }
 
     @Throws(MutexLock.FailedAcquireException::class)
@@ -64,15 +71,15 @@ data class MultiFieldCache<TKey: Any>(
         if (!lock.acquire(lockKey, timeout)) {
             throw MutexLock.FailedAcquireException
         }
-        return PessimisticKeyFieldCacheValueLoader(key, field, setNotEvicted(key, field), lockKey)
+        return PessimisticKeyFieldCacheValueLoader(key, field, acquireNewVersion(key, field), lockKey)
     }
 
     suspend fun <T:Any> optimisticLockForLoad(key: TKey, field: String): CacheValueLoader<T> {
-        return OptimisticKeyFieldCacheValueLoader(key, field, setNotEvicted(key, field))
+        return OptimisticKeyFieldCacheValueLoader(key, field, acquireNewVersion(key, field))
     }
 
     private suspend fun <T:Any> compareAndLoad(key: TKey, field: String, version: Long, value: T): LoadResult<T> {
-        return if (isNotEvicted(key, field, version)) {
+        return if (compareAndAcquire(key, field, version)) {
             val dataBytes = serializer.serialize(value)
             repository.set(keys.key(key), keys.field(field), dataBytes, options.ttl.toMillis(), TimeUnit.MILLISECONDS)
             metrics.incrementPutCount()
@@ -133,17 +140,19 @@ data class MultiFieldCache<TKey: Any>(
         }
 
         try {
-            return when (val cached = readFromCache<T>(key, field)) {
-                null -> {
-                    metrics.incrementMissCount()
-                    null
-                }
-                else -> {
-                    metrics.incrementHitCount()
-                    if (options.applyTtlIfHit && options.ttl.toMillis()> 0L) {
-                        repository.expire(keys.key(key), options.ttl.toMillis(), TimeUnit.MILLISECONDS)
+            return runWithTimeout(options.operationTimeout.toMillis()) {
+                when (val cached = readFromCache<T>(key, field)) {
+                    null -> {
+                        metrics.incrementMissCount()
+                        null
                     }
-                    cached
+                    else -> {
+                        metrics.incrementHitCount()
+                        if (options.applyTtlIfHit && options.ttl.toMillis() > 0L) {
+                            repository.expire(keys.key(key), options.ttl.toMillis(), TimeUnit.MILLISECONDS)
+                        }
+                        cached
+                    }
                 }
             }
         } catch (e: TimeoutCancellationException) {
@@ -162,21 +171,23 @@ data class MultiFieldCache<TKey: Any>(
         }
 
         try {
-            return runOrRetry {
-                when (val cached = readFromCache<T>(key, field)) {
-                    null -> if (isColdTime(key)) {
-                        metrics.incrementMissCount()
-                        fetch()
-                    } else loadToCache(key, field) {
-                        metrics.incrementMissCount()
-                        fetch()
-                    }
-                    else -> {
-                        metrics.incrementHitCount()
-                        if (options.applyTtlIfHit && options.ttl.toMillis()> 0L) {
-                            repository.expire(keys.key(key), options.ttl.toMillis(), TimeUnit.MILLISECONDS)
+            return runWithTimeout(options.operationTimeout.toMillis()) {
+                runOrRetry {
+                    when (val cached = readFromCache<T>(key, field)) {
+                        null -> if (isColdTime(key)) {
+                            metrics.incrementMissCount()
+                            fetch()
+                        } else loadToCache(key, field) {
+                            metrics.incrementMissCount()
+                            fetch()
                         }
-                        cached
+                        else -> {
+                            metrics.incrementHitCount()
+                            if (options.applyTtlIfHit && options.ttl.toMillis() > 0L) {
+                                repository.expire(keys.key(key), options.ttl.toMillis(), TimeUnit.MILLISECONDS)
+                            }
+                            cached
+                        }
                     }
                 }
             }
@@ -196,21 +207,23 @@ data class MultiFieldCache<TKey: Any>(
         }
 
         try {
-            return runOrRetry {
-                when (val cached = readFromCache<T>(key, field)) {
-                    null -> if (isColdTime(key)) {
-                        metrics.incrementMissCount()
-                        ResultGetOrLockForLoad()
-                    } else {
-                        metrics.incrementMissCount()
-                        ResultGetOrLockForLoad(loader = lockForLoad(key, field))
-                    }
-                    else -> {
-                        metrics.incrementHitCount()
-                        if (options.applyTtlIfHit && options.ttl.toMillis() > 0L) {
-                            repository.expire(keys.key(key), options.ttl.toMillis(), TimeUnit.MILLISECONDS)
+            return runWithTimeout(options.operationTimeout.toMillis()) {
+                runOrRetry {
+                    when (val cached = readFromCache<T>(key, field)) {
+                        null -> if (isColdTime(key)) {
+                            metrics.incrementMissCount()
+                            ResultGetOrLockForLoad()
+                        } else {
+                            metrics.incrementMissCount()
+                            ResultGetOrLockForLoad(loader = lockForLoad(key, field))
                         }
-                        ResultGetOrLockForLoad(cached)
+                        else -> {
+                            metrics.incrementHitCount()
+                            if (options.applyTtlIfHit && options.ttl.toMillis() > 0L) {
+                                repository.expire(keys.key(key), options.ttl.toMillis(), TimeUnit.MILLISECONDS)
+                            }
+                            ResultGetOrLockForLoad(cached)
+                        }
                     }
                 }
             }
@@ -249,7 +262,7 @@ data class MultiFieldCache<TKey: Any>(
         fun lock(key: K, postfix: String): String = "${key(key)}|$postfix"
         fun cold(key:K) = lock(key, "@COLD")
         fun fetchKey(key:K, field: String) = lock(key, "$field@FETCH")
-        fun notEvicted(key: K) = lock(key, "@NOTEVICT")
+        fun optimisticLock(key: K) = lock(key, "@NOTEVICT")
 
     }
 
@@ -269,7 +282,7 @@ data class MultiFieldCache<TKey: Any>(
         } else false
     }
 
-    private suspend fun setEvicted(key: TKey) = repository.delete(keys.notEvicted(key))
-    private suspend fun setNotEvicted(key: TKey, field: String) = repository.incrBy(keys.notEvicted(key), field, 1, options.lockTimeout.toMillis(), TimeUnit.MILLISECONDS)
-    private suspend fun isNotEvicted(key: TKey, field: String, version: Long) = version == repository.incrBy(keys.notEvicted(key), field, 1, options.lockTimeout.toMillis(), TimeUnit.MILLISECONDS) - 1
+    private suspend fun setModified(key: TKey) = repository.delete(keys.optimisticLock(key))
+    private suspend fun acquireNewVersion(key: TKey, field: String) = repository.incrBy(keys.optimisticLock(key), field, 1, options.lockTimeout.toMillis(), TimeUnit.MILLISECONDS)
+    private suspend fun compareAndAcquire(key: TKey, field: String, version: Long) = version == acquireNewVersion(key, field) - 1
 }
