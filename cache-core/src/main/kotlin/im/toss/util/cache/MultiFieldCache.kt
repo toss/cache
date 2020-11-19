@@ -32,7 +32,7 @@ data class MultiFieldCache<TKey: Any>(
     suspend fun evict(key: TKey) {
         metrics.incrementEvictCount()
         setColdTime(key)
-        setEvicted(key)
+        setModified(key)
         repository.delete(keys.key(key))
     }
 
@@ -71,15 +71,15 @@ data class MultiFieldCache<TKey: Any>(
         if (!lock.acquire(lockKey, timeout)) {
             throw MutexLock.FailedAcquireException
         }
-        return PessimisticKeyFieldCacheValueLoader(key, field, setNotEvicted(key, field), lockKey)
+        return PessimisticKeyFieldCacheValueLoader(key, field, acquireNewVersion(key, field), lockKey)
     }
 
     suspend fun <T:Any> optimisticLockForLoad(key: TKey, field: String): CacheValueLoader<T> {
-        return OptimisticKeyFieldCacheValueLoader(key, field, setNotEvicted(key, field))
+        return OptimisticKeyFieldCacheValueLoader(key, field, acquireNewVersion(key, field))
     }
 
     private suspend fun <T:Any> compareAndLoad(key: TKey, field: String, version: Long, value: T): LoadResult<T> {
-        return if (isNotEvicted(key, field, version)) {
+        return if (compareAndAcquire(key, field, version)) {
             val dataBytes = serializer.serialize(value)
             repository.set(keys.key(key), keys.field(field), dataBytes, options.ttl.toMillis(), TimeUnit.MILLISECONDS)
             metrics.incrementPutCount()
@@ -262,7 +262,7 @@ data class MultiFieldCache<TKey: Any>(
         fun lock(key: K, postfix: String): String = "${key(key)}|$postfix"
         fun cold(key:K) = lock(key, "@COLD")
         fun fetchKey(key:K, field: String) = lock(key, "$field@FETCH")
-        fun notEvicted(key: K) = lock(key, "@NOTEVICT")
+        fun optimisticLock(key: K) = lock(key, "@NOTEVICT")
 
     }
 
@@ -282,7 +282,7 @@ data class MultiFieldCache<TKey: Any>(
         } else false
     }
 
-    private suspend fun setEvicted(key: TKey) = repository.delete(keys.notEvicted(key))
-    private suspend fun setNotEvicted(key: TKey, field: String) = repository.incrBy(keys.notEvicted(key), field, 1, options.lockTimeout.toMillis(), TimeUnit.MILLISECONDS)
-    private suspend fun isNotEvicted(key: TKey, field: String, version: Long) = version == repository.incrBy(keys.notEvicted(key), field, 1, options.lockTimeout.toMillis(), TimeUnit.MILLISECONDS) - 1
+    private suspend fun setModified(key: TKey) = repository.delete(keys.optimisticLock(key))
+    private suspend fun acquireNewVersion(key: TKey, field: String) = repository.incrBy(keys.optimisticLock(key), field, 1, options.lockTimeout.toMillis(), TimeUnit.MILLISECONDS)
+    private suspend fun compareAndAcquire(key: TKey, field: String, version: Long) = version == acquireNewVersion(key, field) - 1
 }
