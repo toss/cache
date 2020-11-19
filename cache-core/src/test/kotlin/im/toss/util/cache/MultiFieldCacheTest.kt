@@ -33,7 +33,8 @@ class MultiFieldCacheTest {
             coldTime = coldTime,
             coldTimeUnit = TimeUnit.MILLISECONDS,
             applyTtlIfHit = applyTtlIfHit,
-            cacheFailurePolicy = failurePolicy
+            cacheFailurePolicy = failurePolicy,
+            lockTimeout = 10
         )
     )
 
@@ -693,6 +694,23 @@ class MultiFieldCacheTest {
             cache.getOrLoad("key", "field") { "NEW" } equalsTo "HELLO"
             println("${ZonedDateTime.now()}> after get")
             job.await()
+        }
+    }
+
+    @Test
+    fun `getOrLock에서 데이터 로딩 중 예외가 발생하면 락이 즉시 풀려야한다`() {
+        val cache = testCache()
+        val before = System.nanoTime()
+        assertThrows<Exception> {
+            runBlocking {
+                cache.getOrLoad<String>("key", "field") { throw Exception() }
+            }
+        }
+        runBlocking {
+            val cached = cache.getOrLoad("key", "field") { "HELLO" }
+            val elapsed = TimeUnit.MILLISECONDS.convert(System.nanoTime() - before, TimeUnit.NANOSECONDS)
+            cached equalsTo "HELLO"
+            assertThat(elapsed).isLessThan(200)
         }
     }
 

@@ -23,6 +23,9 @@ data class CacheOptions(
     @field:JsonProperty("lock-timeout")
     var lockTimeout: Duration = Duration.ofSeconds(30L),
 
+    @field:JsonProperty("operation-timeout")
+    var operationTimeout: Duration = Duration.ofSeconds(-1L),
+
     @field:JsonProperty("cache-failure-policy")
     var cacheFailurePolicy: CacheFailurePolicy = CacheFailurePolicy.ThrowException
 )
