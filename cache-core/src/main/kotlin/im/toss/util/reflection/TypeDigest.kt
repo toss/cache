@@ -1,54 +1,65 @@
 package im.toss.util.reflection
 
 import im.toss.util.data.encoding.i62.toI62
+import im.toss.util.data.hash.sha1
+import java.lang.Appendable
+import java.lang.StringBuilder
 import java.lang.reflect.*
 import java.nio.ByteBuffer
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 
 class TypeDigest(
-    val digestMode: DigestMode = DigestMode.SHORT
+    val digestMode: DigestMode = DigestMode.SHORT,
+    val environments: Map<String, String> = emptyMap(),
+    private val ignoreFieldNames: Set<String> = emptySet() // don't use for production field
 ) {
-    private val javaVersion = System.getProperty("java.version")
     private val infoByType = ConcurrentHashMap<String, TypeInfo>()
     private val digestByTypeName = ConcurrentHashMap<String, String>()
 
-    inline fun <reified T> digest(): String {
-        return digest((object : TypeReference<T>() {}).type)
-    }
-
-    inline fun <reified T> getOrAdd(): TypeInfo {
-        return getOrAdd((object : TypeReference<T>() {}).type)
-    }
-
-    inline fun <reified T> getDependencies(): Set<String> {
-        return getDependencies((object : TypeReference<T>() {}).type)
-    }
+    inline fun <reified T> digest(): String = digest(getType<T>())
+    inline fun <reified T> getOrAdd(): TypeInfo = getOrAdd(getType<T>())
+    inline fun <reified T> getDependencies(): Set<String> = getDependencies(getType<T>())
+    inline fun <reified T> getSpecification() = getSpecification(getType<T>())
+    inline fun <reified T> getType(): Type? = (object : TypeReference<T>() {}).type
 
 
     fun digest(type: Type?): String {
         val typeInfo = getOrAdd(type)
         return digestByTypeName.computeIfAbsent(typeInfo.type) {
-            MessageDigest.getInstance("SHA1").run {
-                update("<SYSTEM>")
-                update("java=$javaVersion")
+            val spec = getSpecification(type).toString()
+            val hash = spec.toByteArray(Charsets.UTF_8).sha1()
+            val buffer = ByteBuffer.wrap(hash)
+            when (digestMode) {
+                DigestMode.SHORT -> buffer.getInt(0).toI62()
+                DigestMode.HALF -> buffer.getLong(12).toI62()
+                DigestMode.FULL -> buffer.run { "${getLong(0).toI62()}${getLong(8).toI62()}${getInt(16).toI62()}" }
+            }
+        }
+    }
 
-                update("<TYPE-DEFINITION>")
-                typeInfo.digest(this)
+    val environmentsValue: String by lazy {
+        (environments + mapOf("java.version" to System.getProperty("java.version")))
+            .entries
+            .sortedBy { it.key }
+            .joinToString("\n") { "${it.key}=${it.value}" }
+    }
 
-                update("<DEPENDENCIES>")
-                getDependencies(typeInfo.type)
-                    .forEach {
-                        get(it).digest(this)
-                    }
-                ByteBuffer.wrap(digest()).run {
-                    when (digestMode) {
-                        DigestMode.SHORT -> "${getInt(0).toI62()}"
-                        DigestMode.HALF -> "${getLong(12).toI62()}"
-                        DigestMode.FULL -> "${getLong(0).toI62()}${getLong(8).toI62()}${getInt(16).toI62()}"
+    fun getSpecification(type: Type?, appendable: Appendable = StringBuilder()): Appendable {
+        val typeInfo = getOrAdd(type)
+        return appendable.apply {
+            appendln("[DEFINITION]")
+            typeInfo.write(appendable).appendln()
+            appendln("[ENVIRONMENTS]")
+            appendln(environmentsValue)
+            appendln("[DEPENDENCIES]")
+            getDependencies(typeInfo.type)
+                .sortedBy { it }
+                .forEach {
+                    if (it != typeInfo.type) {
+                        get(it).write(appendable).appendln()
                     }
                 }
-            }
         }
     }
 
@@ -166,9 +177,13 @@ class TypeDigest(
                 ClassInfo(
                     typeName,
                     modifiers,
-                    declaredFields.map {
+                    declaredFields.mapNotNull {
                         it.run {
-                            FieldInfo(name, modifiers, genericType.typeName, genericType is TypeVariable<*>)
+                            if (name in ignoreFieldNames) {
+                                null
+                            } else {
+                                FieldInfo(name, modifiers, genericType.typeName, genericType is TypeVariable<*>)
+                            }
                         }
                     },
                     superclass?.typeName ?: "null"
@@ -212,13 +227,16 @@ interface TypeInfo {
     val type: String
     val isInternalType: Boolean get() = true
     val dependencies: Set<String>
-    fun digest(digest: MessageDigest) = digest.update(type)
+    fun write(appendable: Appendable): Appendable = appendable.append(type)
 }
 
 data class PrimitiveTypeInfo(
     override val type: String
 ) : TypeInfo {
     override val dependencies: Set<String> = setOf(type)
+    override fun write(appendable: Appendable): Appendable = appendable.apply {
+        append("primitive $type")
+    }
 }
 
 data class ArrayTypeInfo(
@@ -232,6 +250,10 @@ data class InternalClassInfo(
     override val type: String
 ) : TypeInfo {
     override val dependencies: Set<String> = setOf(type)
+
+    override fun write(appendable: Appendable): Appendable = appendable.apply {
+        append("internal class $type")
+    }
 }
 
 object NullTypeInfo : TypeInfo {
@@ -264,9 +286,13 @@ data class ClassInfo(
         }
     }.toSet()
 
-    override fun digest(digest: MessageDigest) {
-        digest.update("class($type, $superType, $modifiers)")
-        fields.forEach { it.digest(digest) }
+    override fun write(appendable: Appendable): Appendable = appendable.apply {
+        appendln("class $type: $superType^${modifiers.toI62().trimStart('0')} {")
+        fields.forEach { field ->
+            field.write(appendable)
+            appendable.appendln()
+        }
+        append("}")
     }
 }
 
@@ -276,11 +302,11 @@ data class FieldInfo(
     val type: String,
     val isGenericType: Boolean = false
 ) {
-    fun digest(digest: MessageDigest) {
-        if (isGenericType) {
-            digest.update(".field($name,$modifiers,$type)")
+    fun write(appendable: Appendable): Appendable {
+        return if (isGenericType) {
+            appendable.append("field<$type> $name:$type^${modifiers.toI62().trimStart('0')}")
         } else {
-            digest.update(".field($name,$modifiers,$type,generic)")
+            appendable.append("field $name:$type^${modifiers.toI62().trimStart('0')}")
         }
     }
 }
@@ -292,6 +318,10 @@ data class GenericClassInfo(
 ) : TypeInfo {
     override val isInternalType: Boolean get() = false
     override val dependencies: Set<String> = setOf(type, rawType) + typeArguments
+
+    override fun write(appendable: Appendable): Appendable = appendable.apply {
+        append("generic class $type")
+    }
 }
 
 data class WildcardTypeInfo(

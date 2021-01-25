@@ -42,6 +42,64 @@ internal class TypeDigestTest {
     }
 
     @Test
+    fun environmentValueTest() {
+        val javaVersion = System.getProperty("java.version")
+        TypeDigest(
+            DigestMode.SHORT, mapOf(
+                "serializer.version" to "hello:1.0.0",
+                "custom.value" to "cache"
+            )
+        ).environmentsValue equalsTo """
+            custom.value=cache
+            java.version=$javaVersion
+            serializer.version=hello:1.0.0
+        """.trimIndent()
+    }
+
+    @Test
+    fun specificationWriteTest() {
+        val javaVersion = System.getProperty("java.version")
+        val personType = newClass("Person", "age" to Long::class.java)
+        TypeDigest().getSpecification(personType).toString() equalsTo """
+            [DEFINITION]
+            class Person: java.lang.Object^1 {
+            field age:long^1
+            }
+            [ENVIRONMENTS]
+            java.version=$javaVersion
+            [DEPENDENCIES]
+            internal class java.lang.Object
+            primitive long
+            
+        """.trimIndent()
+    }
+
+    @Test
+    fun specificationWriteTest2() {
+        val javaVersion = System.getProperty("java.version")
+        TypeDigest(ignoreFieldNames = setOf("\$jacocoData")).getSpecification<Hello>().toString() equalsTo """
+            [DEFINITION]
+            class im.toss.util.reflection.Hello: java.lang.Object^H {
+            field item:im.toss.util.reflection.HelloItem<java.lang.String>^I
+            field list:java.util.List<java.lang.String>^I
+            }
+            [ENVIRONMENTS]
+            java.version=$javaVersion
+            [DEPENDENCIES]
+            class im.toss.util.reflection.HelloItem: java.lang.Object^H {
+            field<T> value:T^I
+            }
+            generic class im.toss.util.reflection.HelloItem<java.lang.String>
+            internal class java.lang.Object
+            internal class java.lang.String
+            internal class java.util.List
+            generic class java.util.List<java.lang.String>
+            
+        """.trimIndent()
+    }
+
+
+    @Test
     fun enumClassTest() {
         val typeDigest = TypeDigest()
         val type = typeDigest.getOrAdd<EnumClass>() as ClassInfo
@@ -179,3 +237,12 @@ internal class TypeDigestTest {
         val value: Long
     )
 }
+
+data class Hello(
+    val item: HelloItem<String>,
+    val list: List<String>
+)
+
+data class HelloItem<T>(
+    val value: T
+)
