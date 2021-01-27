@@ -16,32 +16,32 @@ class BlockingKeyValueCache<TKey: Any>(val cache: KeyValueCache<TKey>) {
         cache.evict(key)
     }
 
-    fun <T: Any> load(key: TKey, fetch: () -> T) = runBlocking {
+    inline fun <reified T: Any> load(key: TKey, crossinline fetch: () -> T) = runBlocking {
         cache.load(key) {
             fetch()
         }
     }
 
-    fun <T: Any> get(key: TKey): T? = runBlocking {
+    inline fun <reified T: Any> get(key: TKey): T? = runBlocking {
         cache.get<T>(key)
     }
 
-    fun <T: Any> getOrLoad(key: TKey, fetch: () -> T): T = runBlocking {
+    inline fun <reified T: Any> getOrLoad(key: TKey, crossinline fetch: () -> T): T = runBlocking {
         cache.getOrLoad(key) {
             fetch()
         }
     }
 
-    fun <T: Any> getOrLockForLoad(key: TKey): ResultBlockingGetOrLockForLoad<T> = runBlocking {
+    inline fun <reified T: Any> getOrLockForLoad(key: TKey): ResultBlockingGetOrLockForLoad<T> = runBlocking {
         cache.getOrLockForLoad<T>(key).blocking()
     }
 
     @Throws(MutexLock.FailedAcquireException::class)
-    fun <T : Any> lockForLoad(key: TKey, timeout: Long = -1): BlockingCacheValueLoader<T> = runBlocking {
+    inline fun <reified T : Any> lockForLoad(key: TKey, timeout: Long = -1): BlockingCacheValueLoader<T> = runBlocking {
         cache.lockForLoad<T>(key, timeout).blocking()
     }
 
-    fun <T:Any> optimisticLockForLoad(key: TKey): BlockingCacheValueLoader<T> = runBlocking {
+    inline fun <reified T:Any> optimisticLockForLoad(key: TKey): BlockingCacheValueLoader<T> = runBlocking {
         cache.optimisticLockForLoad<T>(key).blocking()
     }
 }

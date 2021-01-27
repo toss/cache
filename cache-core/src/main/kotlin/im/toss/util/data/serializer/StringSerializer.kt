@@ -1,6 +1,8 @@
 package im.toss.util.data.serializer
 
 object StringSerializer : Serializer {
+    override val name: String get() = "string"
+
     override fun <T> deserialize(value: ByteArray): T {
         @Suppress("UNCHECKED_CAST")
         return String(value) as T

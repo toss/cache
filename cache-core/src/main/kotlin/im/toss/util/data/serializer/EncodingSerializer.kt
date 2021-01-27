@@ -7,6 +7,9 @@ class EncodingSerializer(
     private val serializer: Serializer,
     private vararg val codecs: Codec
 ) : Serializer {
+    override val name: String
+        get() = "encoding(${serializer.name}, [${codecs.joinToString(",") { it.name }}])"
+
     override fun <T> serialize(o: T): ByteArray {
         try {
             var data = serializer.serialize(o)

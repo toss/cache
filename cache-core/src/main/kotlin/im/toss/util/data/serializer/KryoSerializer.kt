@@ -30,6 +30,8 @@ class KryoSerializer(
         this.kryoPool = createKryoPool()
     }
 
+    override val name: String get() = "kryo-4"
+
     private fun createKryoPool(): KryoPool {
         return KryoPool.Builder(kryoFactory).softReferences().build()
     }
