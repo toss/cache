@@ -17,32 +17,32 @@ class BlockingMultiFieldCache<TKey: Any>(val cache: MultiFieldCache<TKey>) {
         cache.evict(key)
     }
 
-    fun <T : Any> load(key: TKey, field: String, fetch: () -> T) = runBlocking {
+    inline fun <reified T : Any> load(key: TKey, field: String, crossinline fetch: () -> T) = runBlocking {
         cache.load(key, field) {
             fetch()
         }
     }
 
-    fun <T : Any> get(key: TKey, field: String): T? = runBlocking {
+    inline fun <reified T : Any> get(key: TKey, field: String): T? = runBlocking {
         cache.get<T>(key, field)
     }
 
-    fun <T : Any> getOrLoad(key: TKey, field: String, fetch: () -> T): T = runBlocking {
+    inline fun <reified T : Any> getOrLoad(key: TKey, field: String, crossinline fetch: () -> T): T = runBlocking {
         cache.getOrLoad(key, field) {
             fetch()
         }
     }
 
-    fun <T: Any> getOrLockForLoad(key: TKey, field: String): ResultBlockingGetOrLockForLoad<T> = runBlocking {
+    inline fun <reified T: Any> getOrLockForLoad(key: TKey, field: String): ResultBlockingGetOrLockForLoad<T> = runBlocking {
         cache.getOrLockForLoad<T>(key, field).blocking()
     }
 
     @Throws(MutexLock.FailedAcquireException::class)
-    fun <T : Any> lockForLoad(key: TKey, field: String, timeout: Long = -1): BlockingCacheValueLoader<T> = runBlocking {
+    inline fun <reified T : Any> lockForLoad(key: TKey, field: String, timeout: Long = -1): BlockingCacheValueLoader<T> = runBlocking {
         cache.lockForLoad<T>(key, field, timeout).blocking()
     }
 
-    fun <T:Any> optimisticLockForLoad(key: TKey, field: String): BlockingCacheValueLoader<T> = runBlocking {
+    inline fun <reified T:Any> optimisticLockForLoad(key: TKey, field: String): BlockingCacheValueLoader<T> = runBlocking {
         cache.optimisticLockForLoad<T>(key, field).blocking()
     }
 }

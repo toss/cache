@@ -27,7 +27,10 @@ data class CacheOptions(
     var operationTimeout: Duration = Duration.ofSeconds(-1L),
 
     @field:JsonProperty("cache-failure-policy")
-    var cacheFailurePolicy: CacheFailurePolicy = CacheFailurePolicy.ThrowException
+    var cacheFailurePolicy: CacheFailurePolicy = CacheFailurePolicy.ThrowException,
+
+    @field:JsonProperty("isolation-by-type")
+    var isolationByType: Boolean = false
 )
 
 fun cacheOptions(
@@ -40,7 +43,8 @@ fun cacheOptions(
     coldTimeUnit: TimeUnit? = null,
     lockTimeout: Long? = null,
     lockTimeoutTimeUnit: TimeUnit? = null,
-    cacheFailurePolicy: CacheFailurePolicy? = null
+    cacheFailurePolicy: CacheFailurePolicy? = null,
+    isolationByType: Boolean? = null
 ): CacheOptions {
     return CacheOptions(
         version = version ?: "0001",
@@ -49,6 +53,7 @@ fun cacheOptions(
         applyTtlIfHit = applyTtlIfHit ?: false,
         coldTime = Duration.ofMillis((coldTimeUnit?:TimeUnit.SECONDS).toMillis(coldTime ?: -1L)),
         lockTimeout = Duration.ofMillis((lockTimeoutTimeUnit?:TimeUnit.SECONDS).toMillis(lockTimeout ?: 30L)),
-        cacheFailurePolicy = cacheFailurePolicy ?: CacheFailurePolicy.ThrowException
+        cacheFailurePolicy = cacheFailurePolicy ?: CacheFailurePolicy.ThrowException,
+        isolationByType = isolationByType ?: false
     )
 }

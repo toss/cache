@@ -21,7 +21,6 @@ class TypeDigest(
     inline fun <reified T> getOrAdd(): TypeInfo = getOrAdd(getType<T>())
     inline fun <reified T> getDependencies(): Set<String> = getDependencies(getType<T>())
     inline fun <reified T> getSpecification() = getSpecification(getType<T>())
-    inline fun <reified T> getType(): Type? = (object : TypeReference<T>() {}).type
 
 
     fun digest(type: Type?): String {
@@ -336,10 +335,6 @@ data class GenericTypeVariableInfo(
     override val type: String
 ) : TypeInfo {
     override val dependencies: Set<String> = emptySet()
-}
-
-abstract class TypeReference<T> {
-    var type: Type? = (javaClass.genericSuperclass as ParameterizedType).actualTypeArguments[0]
 }
 
 enum class DigestMode {
