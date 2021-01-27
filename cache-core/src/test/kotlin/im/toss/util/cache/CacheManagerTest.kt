@@ -1,12 +1,12 @@
 package im.toss.util.cache
 
 import im.toss.test.equalsTo
+import im.toss.util.data.serializer.KryoSerializer
 import im.toss.util.data.serializer.StringSerializer
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Test
 
-import org.junit.jupiter.api.Assertions.*
 import java.time.Duration
 import java.util.concurrent.TimeUnit
 
@@ -225,6 +225,61 @@ internal class CacheManagerTest {
 
             val cache2 = cacheManager.keyValueCache<String>("hello", "ByteArraySerializer")
             cache2.get<ByteArray>("key1") equalsTo "value1".toByteArray()
+        }
+    }
+
+    @Test
+    fun `isolation-by-type`() {
+        runBlocking {
+            val cacheManager = CacheManager(SimpleMeterRegistry()) {
+                keyFunction { name, key -> "$name:$key" }
+                inMemory("first")
+                serializer { KryoSerializer() }
+                namespace("isolated") {
+                    CacheNamespace(
+                        resourceId = "first",
+                        options = cacheOptions(
+                            version = "1",
+                            cacheMode = CacheMode.NORMAL,
+                            ttl = 10,
+                            isolationByType = true
+                        )
+                    )
+                }
+
+                namespace("non-isolated") {
+                    CacheNamespace(
+                        resourceId = "first",
+                        options = cacheOptions(
+                            version = "1",
+                            cacheMode = CacheMode.NORMAL,
+                            ttl = 10,
+                            isolationByType = false
+                        )
+                    )
+                }
+            }
+
+            val nonIsolatedCache = cacheManager.keyValueCache<String>("non-isolated")
+            nonIsolatedCache.getOrLoad("key") { "VALUE" } equalsTo "VALUE"
+            nonIsolatedCache.get<String>("key") equalsTo "VALUE"
+
+
+            nonIsolatedCache.getOrLoad("key") { 1L } equalsTo "VALUE"
+            nonIsolatedCache.get<Long>("key") equalsTo "VALUE"
+
+            nonIsolatedCache.get<String>("key") equalsTo "VALUE"
+            nonIsolatedCache.get<Long>("key") equalsTo "VALUE"
+
+            val isolatedCache = cacheManager.keyValueCache<String>("isolated")
+            isolatedCache.getOrLoad("key") { "VALUE" } equalsTo "VALUE"
+            isolatedCache.get<String>("key") equalsTo "VALUE"
+
+            isolatedCache.getOrLoad("key") { 1L } equalsTo 1L
+            isolatedCache.get<Long>("key") equalsTo 1L
+
+            isolatedCache.get<String>("key") equalsTo "VALUE"
+            isolatedCache.get<Long>("key") equalsTo 1L
         }
     }
 }

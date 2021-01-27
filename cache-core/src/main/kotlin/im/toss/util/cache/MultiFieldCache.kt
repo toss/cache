@@ -7,9 +7,12 @@ import im.toss.util.concurrent.lock.MutexLock
 import im.toss.util.concurrent.lock.runOrRetry
 import im.toss.util.coroutine.runWithTimeout
 import im.toss.util.data.serializer.Serializer
+import im.toss.util.reflection.TypeDigest
+import im.toss.util.reflection.getType
 import im.toss.util.repository.KeyFieldValueRepository
 import kotlinx.coroutines.TimeoutCancellationException
 import mu.KotlinLogging
+import java.lang.reflect.Type
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -27,7 +30,13 @@ data class MultiFieldCache<TKey: Any>(
 ) : Cache, CacheMeter by metrics {
     val blocking by lazy { BlockingMultiFieldCache(this) }
 
-    private val keys = Keys<TKey>(name, keyFunction, options)
+    private val typeDigest: TypeDigest = TypeDigest(
+        environments = mapOf(
+            "serializer.name" to serializer.name
+        )
+    )
+
+    private val keys = Keys<TKey>(name, keyFunction, options, typeDigest)
 
     suspend fun evict(key: TKey) {
         metrics.incrementEvictCount()
@@ -36,14 +45,15 @@ data class MultiFieldCache<TKey: Any>(
         repository.delete(keys.key(key))
     }
 
-    suspend fun <T: Any> load(key: TKey, field: String, fetch: (suspend () -> T)) {
+    suspend inline fun <reified T: Any> load(key: TKey, field: String, noinline fetch: (suspend () -> T)) = load(key, field, getType<T>(), fetch)
+    suspend fun <T: Any> load(key: TKey, field: String, type: Type?, fetch: (suspend () -> T)) {
         runWithTimeout(options.operationTimeout.toMillis()) {
             if (options.cacheMode == CacheMode.EVICTION_ONLY) {
                 evict(key)
             } else {
                 try {
                     runOrRetry {
-                        loadToCache(key, field, fetch)
+                        loadToCache(key, field, type, fetch)
                     }
                 } catch (e: Throwable) {
                     options.cacheFailurePolicy.handle(
@@ -54,8 +64,8 @@ data class MultiFieldCache<TKey: Any>(
         }
     }
 
-    private suspend fun <T: Any> loadToCache(key: TKey, field: String, fetch: (suspend () -> T)): T {
-        val lock = lockForLoad<T>(key, field)
+    private suspend fun <T: Any> loadToCache(key: TKey, field: String, type: Type?, fetch: (suspend () -> T)): T {
+        val lock = lockForLoad<T>(key, field, type)
         try {
             val value = fetch()
             lock.load(value)
@@ -65,27 +75,34 @@ data class MultiFieldCache<TKey: Any>(
         }
     }
 
+
     @Throws(MutexLock.FailedAcquireException::class)
-    suspend fun <T:Any> lockForLoad(key: TKey, field: String, timeout: Long = -1): CacheValueLoader<T> {
+    suspend inline fun <reified T:Any> lockForLoad(key: TKey, field: String, timeout: Long = -1): CacheValueLoader<T>
+            = lockForLoad(key, field, getType<T>(), timeout)
+
+    @Throws(MutexLock.FailedAcquireException::class)
+    suspend fun <T:Any> lockForLoad(key: TKey, field: String, type: Type?, timeout: Long = -1): CacheValueLoader<T> {
         val lockKey = keys.fetchKey(key, field)
         if (!lock.acquire(lockKey, timeout)) {
             throw MutexLock.FailedAcquireException
         }
-        return PessimisticKeyFieldCacheValueLoader(key, field, acquireNewVersion(key, field), lockKey)
+        return PessimisticKeyFieldCacheValueLoader(key, field, type, acquireNewVersion(key, field), lockKey)
     }
 
-    suspend fun <T:Any> optimisticLockForLoad(key: TKey, field: String): CacheValueLoader<T> {
-        return OptimisticKeyFieldCacheValueLoader(key, field, acquireNewVersion(key, field))
+    suspend inline fun <reified T:Any> optimisticLockForLoad(key: TKey, field: String): CacheValueLoader<T>
+            = optimisticLockForLoad(key, field, getType<T>())
+    suspend fun <T:Any> optimisticLockForLoad(key: TKey, field: String, type: Type?): CacheValueLoader<T> {
+        return OptimisticKeyFieldCacheValueLoader(key, field, type, acquireNewVersion(key, field))
     }
 
-    private suspend fun <T:Any> compareAndLoad(key: TKey, field: String, version: Long, value: T): LoadResult<T> {
+    private suspend fun <T:Any> compareAndLoad(key: TKey, field: String, version: Long, type: Type?, value: T): LoadResult<T> {
         return if (compareAndAcquire(key, field, version)) {
             val dataBytes = serializer.serialize(value)
-            repository.set(keys.key(key), keys.field(field), dataBytes, options.ttl.toMillis(), TimeUnit.MILLISECONDS)
+            repository.set(keys.key(key), keys.field(field, type), dataBytes, options.ttl.toMillis(), TimeUnit.MILLISECONDS)
             metrics.incrementPutCount()
             LoadResult(value)
         } else {
-            repository.delete(keys.key(key), keys.field(field))
+            repository.delete(keys.key(key), keys.field(field, type))
             logger.info("optimistic lock failure occured on load, purged cached data. cache=$name, key=$key, field=$field")
             LoadResult(value, success = false, isOptimisticLockFailure = true)
         }
@@ -94,6 +111,7 @@ data class MultiFieldCache<TKey: Any>(
     inner class PessimisticKeyFieldCacheValueLoader<T: Any>(
         val key: TKey,
         val field: String,
+        val type: Type?,
         override val version: Long,
         private val lockKey: String
     ): CacheValueLoader<T> {
@@ -101,7 +119,7 @@ data class MultiFieldCache<TKey: Any>(
         override suspend fun load(value: T): LoadResult<T> {
             if (loaded.compareAndSet(false, true)) {
                 return try {
-                    compareAndLoad(key, field, version, value)
+                    compareAndLoad(key, field, version, type, value)
                 } finally {
                     lock.release(lockKey)
                 }
@@ -120,12 +138,13 @@ data class MultiFieldCache<TKey: Any>(
     inner class OptimisticKeyFieldCacheValueLoader<T: Any>(
         val key: TKey,
         val field: String,
+        val type: Type?,
         override val version: Long
     ): CacheValueLoader<T> {
         private var loaded = AtomicBoolean(false)
         override suspend fun load(value: T): LoadResult<T> {
             if (loaded.compareAndSet(false, true)) {
-                return compareAndLoad(key, field, version, value)
+                return compareAndLoad(key, field, version, type, value)
             } else {
                 throw AlreadyLoadedException()
             }
@@ -134,14 +153,15 @@ data class MultiFieldCache<TKey: Any>(
         override suspend fun release() {}
     }
 
-    suspend fun <T: Any> get(key: TKey, field: String): T? {
+    suspend inline fun <reified T: Any> get(key: TKey, field: String): T? = get(key, field, getType<T>())
+    suspend fun <T: Any> get(key: TKey, field: String, type: Type?): T? {
         if (options.cacheMode == CacheMode.EVICTION_ONLY) {
             return null
         }
 
         try {
             return runWithTimeout(options.operationTimeout.toMillis()) {
-                when (val cached = readFromCache<T>(key, field)) {
+                when (val cached = readFromCache<T>(key, field, type)) {
                     null -> {
                         metrics.incrementMissCount()
                         null
@@ -164,7 +184,9 @@ data class MultiFieldCache<TKey: Any>(
         return null
     }
 
-    suspend fun <T: Any> getOrLoad(key: TKey, field: String, fetch: (suspend () -> T)): T {
+    suspend inline fun <reified T: Any> getOrLoad(key: TKey, field: String, noinline fetch: (suspend () -> T)): T
+            = getOrLoad(key, field, getType<T>(), fetch)
+    suspend fun <T: Any> getOrLoad(key: TKey, field: String, type: Type?, fetch: (suspend () -> T)): T {
         if (options.cacheMode == CacheMode.EVICTION_ONLY) {
             metrics.incrementMissCount()
             return fetch()
@@ -173,11 +195,11 @@ data class MultiFieldCache<TKey: Any>(
         try {
             return runWithTimeout(options.operationTimeout.toMillis()) {
                 runOrRetry {
-                    when (val cached = readFromCache<T>(key, field)) {
+                    when (val cached = readFromCache<T>(key, field, type)) {
                         null -> if (isColdTime(key)) {
                             metrics.incrementMissCount()
                             fetch()
-                        } else loadToCache(key, field) {
+                        } else loadToCache(key, field, type) {
                             metrics.incrementMissCount()
                             fetch()
                         }
@@ -200,7 +222,9 @@ data class MultiFieldCache<TKey: Any>(
         return fetch()
     }
 
-    suspend fun <T: Any> getOrLockForLoad(key: TKey, field: String): ResultGetOrLockForLoad<T> {
+    suspend inline fun <reified T: Any> getOrLockForLoad(key: TKey, field: String): ResultGetOrLockForLoad<T>
+            = getOrLockForLoad(key, field, getType<T>())
+    suspend fun <T: Any> getOrLockForLoad(key: TKey, field: String, type: Type?): ResultGetOrLockForLoad<T> {
         if (options.cacheMode == CacheMode.EVICTION_ONLY) {
             metrics.incrementMissCount()
             return ResultGetOrLockForLoad()
@@ -209,13 +233,13 @@ data class MultiFieldCache<TKey: Any>(
         try {
             return runWithTimeout(options.operationTimeout.toMillis()) {
                 runOrRetry {
-                    when (val cached = readFromCache<T>(key, field)) {
+                    when (val cached = readFromCache<T>(key, field, type)) {
                         null -> if (isColdTime(key)) {
                             metrics.incrementMissCount()
                             ResultGetOrLockForLoad()
                         } else {
                             metrics.incrementMissCount()
-                            ResultGetOrLockForLoad(loader = lockForLoad(key, field))
+                            ResultGetOrLockForLoad(loader = lockForLoad(key, field, type))
                         }
                         else -> {
                             metrics.incrementHitCount()
@@ -238,8 +262,8 @@ data class MultiFieldCache<TKey: Any>(
     }
 
 
-    private suspend fun <T> readFromCache(key: TKey, field: String): T? {
-        val cachedData = repository.get(keys.key(key), keys.field(field))
+    private suspend fun <T> readFromCache(key: TKey, field: String, type: Type?): T? {
+        val cachedData = repository.get(keys.key(key), keys.field(field, type))
         return if (cachedData == null) {
             null
         } else {
@@ -254,10 +278,15 @@ data class MultiFieldCache<TKey: Any>(
     private class Keys<K: Any>(
         private val name: String,
         private val keyFunction: Cache.KeyFunction,
-        val options: CacheOptions
+        val options: CacheOptions,
+        val digest: TypeDigest
     ) {
         fun key(key: K): String = keyFunction.function(name, key)
-        fun field(field: String): String = "$field|${options.version}"
+        fun field(field: String, type: Type?): String = if (options.isolationByType) {
+            "$field|${options.version}|${digest.digest(type)}"
+        } else {
+            "$field|${options.version}"
+        }
 
         fun lock(key: K, postfix: String): String = "${key(key)}|$postfix"
         fun cold(key:K) = lock(key, "@COLD")

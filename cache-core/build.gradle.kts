@@ -39,6 +39,7 @@ dependencies {
     implementation("com.esotericsoftware:kryo:4.0.2")
     implementation("commons-io:commons-io:2.6")
 
+    implementation("com.github.toss:tuid:v0.2.1")
     implementation("com.fasterxml.jackson.core:jackson-annotations:2.11.2")
     implementation("com.fasterxml.jackson.core:jackson-core:2.11.2")
     implementation("com.fasterxml.jackson.core:jackson-databind:2.11.2")
