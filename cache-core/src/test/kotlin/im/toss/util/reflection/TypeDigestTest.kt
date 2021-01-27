@@ -177,7 +177,7 @@ internal class TypeDigestTest {
             Given(FloatArray::class.java, "float[]", "float"),
             Given(DoubleArray::class.java, "double[]", "double"),
             Given(Array<Any>::class.java, "java.lang.Object[]", "java.lang.Object"),
-            Given(Array<Integer>::class.java, "java.lang.Integer[]", "java.lang.Integer"),
+            Given(Array<Int>::class.java, "java.lang.Integer[]", "java.lang.Integer"),
             Given(Array<Long>::class.java, "java.lang.Long[]", "java.lang.Long"),
             Given(
                 Array<SimpleDataClass>::class.java,

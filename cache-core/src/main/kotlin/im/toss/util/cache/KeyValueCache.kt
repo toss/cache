@@ -15,12 +15,11 @@ data class KeyValueCache<TKey: Any>(
     val repository: KeyFieldValueRepository,
     val serializer: Serializer,
     val options: CacheOptions,
-    private val typeDigest: TypeDigest = TypeDigest(),
     private val metrics: CacheMetrics = CacheMetrics(name)
 ) : Cache, CacheMeter by metrics {
     val blocking by lazy { BlockingKeyValueCache(this) }
 
-    val cache by lazy { MultiFieldCache<TKey>(name, keyFunction, lock, repository, serializer, options, typeDigest, metrics, "KeyValueCache") }
+    val cache by lazy { MultiFieldCache<TKey>(name, keyFunction, lock, repository, serializer, options, metrics, "KeyValueCache") }
     val field = ".value"
 
     suspend fun evict(key: TKey) = cache.evict(key)

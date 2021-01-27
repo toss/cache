@@ -7,6 +7,8 @@ import java.util.zip.GZIPInputStream
 import java.util.zip.GZIPOutputStream
 
 class GZipCompressionCodec : Codec {
+    override val name: String get() = "gzip"
+
     override fun encode(bytes: ByteArray): ByteArray {
         val output = ByteArrayOutputStream()
         GZIPOutputStream(output).use { out -> out.write(bytes) }

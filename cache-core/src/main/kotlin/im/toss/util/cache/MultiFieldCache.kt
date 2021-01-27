@@ -25,11 +25,16 @@ data class MultiFieldCache<TKey: Any>(
     val repository: KeyFieldValueRepository,
     val serializer: Serializer,
     val options: CacheOptions,
-    private val typeDigest: TypeDigest = TypeDigest(),
     private val metrics: CacheMetrics = CacheMetrics(name),
     private val typeName: String = "MultiFieldCache"
 ) : Cache, CacheMeter by metrics {
     val blocking by lazy { BlockingMultiFieldCache(this) }
+
+    private val typeDigest: TypeDigest = TypeDigest(
+        environments = mapOf(
+            "serializer.name" to serializer.name
+        )
+    )
 
     private val keys = Keys<TKey>(name, keyFunction, options, typeDigest)
 
