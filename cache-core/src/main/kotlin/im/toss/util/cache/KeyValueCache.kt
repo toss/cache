@@ -41,7 +41,7 @@ data class KeyValueCacheImpl<TKey: Any>(
     override val options: CacheOptions,
     private val metrics: CacheMetrics = CacheMetrics(name)
 ) : Cache, CacheMeter by metrics, KeyValueCache<TKey>() {
-    val cache by lazy { MultiFieldCache<TKey>(name, keyFunction, lock, repository, serializer, options, metrics, "KeyValueCache") }
+    val cache by lazy { MultiFieldCacheImpl<TKey>(name, keyFunction, lock, repository, serializer, options, metrics, "KeyValueCache") }
     val field = ".value"
 
     override suspend fun evict(key: TKey) = cache.evict(key)

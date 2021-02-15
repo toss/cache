@@ -18,18 +18,38 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 private val logger = KotlinLogging.logger {}
 
-data class MultiFieldCache<TKey: Any>(
+abstract class MultiFieldCache<TKey: Any> {
+    val blocking by lazy { BlockingMultiFieldCache(this) }
+    abstract val options: CacheOptions
+
+    abstract suspend fun evict(key: TKey)
+    abstract suspend fun <T: Any> get(key: TKey, field: String, type: Type?): T?
+    abstract suspend fun <T: Any> load(key: TKey, field: String, type: Type?, fetch: (suspend () -> T))
+    abstract suspend fun <T: Any> getOrLoad(key: TKey, field: String, type: Type?, fetch: (suspend () -> T)): T
+    @Throws(MutexLock.FailedAcquireException::class)
+    abstract suspend fun <T: Any> lockForLoad(key: TKey, field: String, type: Type?, timeout: Long = -1): CacheValueLoader<T>
+    abstract suspend fun <T: Any> getOrLockForLoad(key: TKey, field: String, type: Type?): ResultGetOrLockForLoad<T>
+    abstract suspend fun <T: Any> optimisticLockForLoad(key: TKey, field: String, type: Type?): CacheValueLoader<T>
+
+    suspend inline fun <reified T: Any> optimisticLockForLoad(key: TKey, field: String): CacheValueLoader<T> = optimisticLockForLoad(key, field, getType<T>())
+    @Throws(MutexLock.FailedAcquireException::class)
+    suspend inline fun <reified T: Any> lockForLoad(key: TKey, field: String, timeout: Long = -1): CacheValueLoader<T> = lockForLoad(key, field, getType<T>(), timeout)
+    suspend inline fun <reified T: Any> getOrLockForLoad(key: TKey, field: String): ResultGetOrLockForLoad<T> = getOrLockForLoad(key, field, getType<T>())
+    suspend inline fun <reified T: Any> getOrLoad(key: TKey, field: String, noinline fetch: (suspend () -> T)): T = getOrLoad(key, field, getType<T>(), fetch)
+    suspend inline fun <reified T: Any> get(key: TKey, field: String): T? = get(key, field, getType<T>())
+    suspend inline fun <reified T: Any> load(key: TKey, field: String, noinline fetch: (suspend () -> T)) = load(key, field, getType<T>(), fetch)
+}
+
+data class MultiFieldCacheImpl<TKey: Any>(
     override val name: String,
     val keyFunction: Cache.KeyFunction,
     val lock: MutexLock,
     val repository: KeyFieldValueRepository,
     val serializer: Serializer,
-    val options: CacheOptions,
+    override val options: CacheOptions,
     private val metrics: CacheMetrics = CacheMetrics(name),
     private val typeName: String = "MultiFieldCache"
-) : Cache, CacheMeter by metrics {
-    val blocking by lazy { BlockingMultiFieldCache(this) }
-
+) : Cache, CacheMeter by metrics, MultiFieldCache<TKey>() {
     private val typeDigest: TypeDigest = TypeDigest(
         environments = mapOf(
             "serializer.name" to serializer.name
@@ -38,15 +58,14 @@ data class MultiFieldCache<TKey: Any>(
 
     private val keys = Keys<TKey>(name, keyFunction, options, typeDigest)
 
-    suspend fun evict(key: TKey) {
+    override suspend fun evict(key: TKey) {
         metrics.incrementEvictCount()
         setColdTime(key)
         setModified(key)
         repository.delete(keys.key(key))
     }
 
-    suspend inline fun <reified T: Any> load(key: TKey, field: String, noinline fetch: (suspend () -> T)) = load(key, field, getType<T>(), fetch)
-    suspend fun <T: Any> load(key: TKey, field: String, type: Type?, fetch: (suspend () -> T)) {
+    override suspend fun <T: Any> load(key: TKey, field: String, type: Type?, fetch: (suspend () -> T)) {
         runWithTimeout(options.operationTimeout.toMillis()) {
             if (options.cacheMode == CacheMode.EVICTION_ONLY) {
                 evict(key)
@@ -77,11 +96,7 @@ data class MultiFieldCache<TKey: Any>(
 
 
     @Throws(MutexLock.FailedAcquireException::class)
-    suspend inline fun <reified T:Any> lockForLoad(key: TKey, field: String, timeout: Long = -1): CacheValueLoader<T>
-            = lockForLoad(key, field, getType<T>(), timeout)
-
-    @Throws(MutexLock.FailedAcquireException::class)
-    suspend fun <T:Any> lockForLoad(key: TKey, field: String, type: Type?, timeout: Long = -1): CacheValueLoader<T> {
+    override suspend fun <T:Any> lockForLoad(key: TKey, field: String, type: Type?, timeout: Long): CacheValueLoader<T> {
         val lockKey = keys.fetchKey(key, field)
         if (!lock.acquire(lockKey, timeout)) {
             throw MutexLock.FailedAcquireException
@@ -89,9 +104,7 @@ data class MultiFieldCache<TKey: Any>(
         return PessimisticKeyFieldCacheValueLoader(key, field, type, acquireNewVersion(key, field), lockKey)
     }
 
-    suspend inline fun <reified T:Any> optimisticLockForLoad(key: TKey, field: String): CacheValueLoader<T>
-            = optimisticLockForLoad(key, field, getType<T>())
-    suspend fun <T:Any> optimisticLockForLoad(key: TKey, field: String, type: Type?): CacheValueLoader<T> {
+    override suspend fun <T:Any> optimisticLockForLoad(key: TKey, field: String, type: Type?): CacheValueLoader<T> {
         return OptimisticKeyFieldCacheValueLoader(key, field, type, acquireNewVersion(key, field))
     }
 
@@ -153,8 +166,7 @@ data class MultiFieldCache<TKey: Any>(
         override suspend fun release() {}
     }
 
-    suspend inline fun <reified T: Any> get(key: TKey, field: String): T? = get(key, field, getType<T>())
-    suspend fun <T: Any> get(key: TKey, field: String, type: Type?): T? {
+    override suspend fun <T: Any> get(key: TKey, field: String, type: Type?): T? {
         if (options.cacheMode == CacheMode.EVICTION_ONLY) {
             return null
         }
@@ -184,9 +196,7 @@ data class MultiFieldCache<TKey: Any>(
         return null
     }
 
-    suspend inline fun <reified T: Any> getOrLoad(key: TKey, field: String, noinline fetch: (suspend () -> T)): T
-            = getOrLoad(key, field, getType<T>(), fetch)
-    suspend fun <T: Any> getOrLoad(key: TKey, field: String, type: Type?, fetch: (suspend () -> T)): T {
+    override suspend fun <T: Any> getOrLoad(key: TKey, field: String, type: Type?, fetch: (suspend () -> T)): T {
         if (options.cacheMode == CacheMode.EVICTION_ONLY) {
             metrics.incrementMissCount()
             return fetch()
@@ -222,9 +232,7 @@ data class MultiFieldCache<TKey: Any>(
         return fetch()
     }
 
-    suspend inline fun <reified T: Any> getOrLockForLoad(key: TKey, field: String): ResultGetOrLockForLoad<T>
-            = getOrLockForLoad(key, field, getType<T>())
-    suspend fun <T: Any> getOrLockForLoad(key: TKey, field: String, type: Type?): ResultGetOrLockForLoad<T> {
+    override suspend fun <T: Any> getOrLockForLoad(key: TKey, field: String, type: Type?): ResultGetOrLockForLoad<T> {
         if (options.cacheMode == CacheMode.EVICTION_ONLY) {
             metrics.incrementMissCount()
             return ResultGetOrLockForLoad()

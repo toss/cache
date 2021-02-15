@@ -20,7 +20,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.system.measureTimeMillis
 
 class MultiFieldCacheTest {
-    private fun testCache(repository: KeyFieldValueRepository? = null, version: String = "0001", ttl:Long = 100L, coldTime: Long = 0L, applyTtlIfHit: Boolean = true, mutexLock: MutexLock = LocalMutexLock(5000), failurePolicy: CacheFailurePolicy = CacheFailurePolicy.ThrowException) = MultiFieldCache<String>(
+    private fun testCache(repository: KeyFieldValueRepository? = null, version: String = "0001", ttl:Long = 100L, coldTime: Long = 0L, applyTtlIfHit: Boolean = true, mutexLock: MutexLock = LocalMutexLock(5000), failurePolicy: CacheFailurePolicy = CacheFailurePolicy.ThrowException) = MultiFieldCacheImpl<String>(
         name = "dict_cache",
         keyFunction = Cache.KeyFunction { name, key -> "$name:{$key}" },
         lock = mutexLock,
