@@ -1,6 +1,7 @@
 package im.toss.util.cache
 
 import im.toss.test.equalsTo
+import im.toss.util.cache.impl.KeyValueCacheImpl
 import im.toss.util.data.serializer.StringSerializer
 import im.toss.util.repository.KeyFieldValueRepository
 import io.mockk.*

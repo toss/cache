@@ -1,5 +1,7 @@
 package im.toss.util.cache
 
+import im.toss.util.cache.impl.KeyValueCacheImpl
+import im.toss.util.cache.impl.MultiFieldCacheImpl
 import im.toss.util.cache.metrics.CacheMetrics
 import im.toss.util.cache.resources.RedisClusterCacheResources
 import im.toss.util.data.serializer.Serializer

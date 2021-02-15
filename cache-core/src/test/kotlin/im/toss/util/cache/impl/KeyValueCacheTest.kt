@@ -1,6 +1,7 @@
-package im.toss.util.cache
+package im.toss.util.cache.impl
 
 import im.toss.test.equalsTo
+import im.toss.util.cache.*
 import im.toss.util.concurrent.lock.MutexLock
 import im.toss.util.coroutine.runWithTimeout
 import im.toss.util.data.serializer.StringSerializer
