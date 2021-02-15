@@ -45,7 +45,7 @@ class CacheManager(
         return keyValueCaches.computeIfAbsent(namespaceId) {
             val namespace = getNamespace(namespaceId)
             val resources = getResources(namespace.resourceId)
-            KeyValueCache<TKey>(
+            KeyValueCacheImpl<TKey>(
                 name = namespaceId,
                 keyFunction = keyFunction,
                 lock = resources.lock(namespace.options.run { lockTimeout.seconds }),
@@ -63,7 +63,17 @@ class CacheManager(
     ): KeyValueCache<TKey> {
         @Suppress("UNCHECKED_CAST")
         return keyValueCacheWithSerializers.computeIfAbsent(namespaceId to serializerId) {
-            keyValueCache<TKey>(namespaceId).copy(serializer = getSerializer(serializerId))
+            val namespace = getNamespace(namespaceId)
+            val resources = getResources(namespace.resourceId)
+            KeyValueCacheImpl<TKey>(
+                name = namespaceId,
+                keyFunction = keyFunction,
+                lock = resources.lock(namespace.options.run { lockTimeout.seconds }),
+                repository = resources.keyFieldValueRepository(),
+                serializer = getSerializer(serializerId),
+                options = namespace.options,
+                metrics = getMetrics(namespaceId)
+            )
         } as KeyValueCache<TKey>
     }
 

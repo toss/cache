@@ -30,7 +30,7 @@ class KeyValueCacheTest {
         applyTtlIfHit: Boolean = true,
         mutexLock: MutexLock = LocalMutexLock(5000),
         failurePolicy: CacheFailurePolicy = CacheFailurePolicy.ThrowException
-    ) = KeyValueCache<String>(
+    ) = KeyValueCacheImpl<String>(
         name = "dict_cache",
         keyFunction = Cache.KeyFunction { name, key -> "$name:{$key}" },
         lock = mutexLock,
