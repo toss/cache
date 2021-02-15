@@ -6,6 +6,9 @@ import im.toss.util.cache.metrics.CacheMetrics
 import im.toss.util.concurrent.lock.MutexLock
 import im.toss.util.data.serializer.Serializer
 import im.toss.util.repository.KeyFieldValueRepository
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import java.lang.reflect.Type
 
 data class KeyValueCacheImpl<TKey: Any>(
@@ -29,4 +32,16 @@ data class KeyValueCacheImpl<TKey: Any>(
     override suspend fun <T : Any> lockForLoad(key: TKey, type: Type?, timeout: Long): CacheValueLoader<T> = cache.lockForLoad(key, field, type, timeout)
     override suspend fun <T : Any> getOrLockForLoad(key: TKey, type: Type?): ResultGetOrLockForLoad<T> = cache.getOrLockForLoad(key, field, type)
     override suspend fun <T : Any> optimisticLockForLoad(key: TKey, type: Type?): CacheValueLoader<T> = cache.optimisticLockForLoad(key, field, type)
+
+    override suspend fun <T : Any> multiGet(keys: Set<TKey>, type: Type?): Map<TKey, T?> = coroutineScope {
+        // parallel get
+        keys
+            .chunked(100)
+            .flatMap {
+                it
+                    .map { key -> async { key to get<T>(key, type) } }
+                    .awaitAll()
+            }
+            .toMap()
+    }
 }

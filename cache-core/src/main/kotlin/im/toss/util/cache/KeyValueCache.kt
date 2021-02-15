@@ -18,6 +18,8 @@ abstract class KeyValueCache<TKey: Any> {
     abstract suspend fun <T: Any> getOrLockForLoad(key: TKey, type: Type?): ResultGetOrLockForLoad<T>
     abstract suspend fun <T: Any> optimisticLockForLoad(key: TKey, type: Type?): CacheValueLoader<T>
 
+    abstract suspend fun <T: Any> multiGet(keys: Set<TKey>, type: Type?): Map<TKey, T?>
+
     suspend inline fun <reified T: Any> optimisticLockForLoad(key: TKey): CacheValueLoader<T> = optimisticLockForLoad(key, getType<T>())
     @Throws(MutexLock.FailedAcquireException::class)
     suspend inline fun <reified T: Any> lockForLoad(key: TKey, timeout: Long = -1): CacheValueLoader<T> = lockForLoad(key, getType<T>(), timeout)
@@ -25,4 +27,6 @@ abstract class KeyValueCache<TKey: Any> {
     suspend inline fun <reified T: Any> getOrLoad(key: TKey, noinline fetch: (suspend () -> T)): T = getOrLoad(key, getType<T>(), fetch)
     suspend inline fun <reified T: Any> get(key: TKey): T? = get(key, getType<T>())
     suspend inline fun <reified T: Any> load(key: TKey, noinline fetch: (suspend () -> T)) = load(key, getType<T>(), fetch)
+
+    suspend inline fun <reified T: Any> multiGet(keys: Set<TKey>): Map<TKey, T?> = multiGet(keys, getType<T>())
 }

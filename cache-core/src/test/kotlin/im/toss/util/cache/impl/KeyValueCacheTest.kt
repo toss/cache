@@ -900,5 +900,22 @@ class KeyValueCacheTest {
             cache.evictionCount equalsTo 1L
         }
     }
+
+    @Test
+    fun `multiGet은 캐시 데이터를 병렬로 조회한다`() {
+        runBlocking {
+            // given
+            val cache = testCache(ttl = 10000)
+            (1..1000).map {
+                async {
+                    cache.load("$it") { "v$it" }
+                }
+            }.awaitAll()
+
+            cache.multiGet<String>(
+                (1..1000).map{"$it"}.toSet()
+            ) equalsTo (1..1000).map { "$it" to "v$it" }.toMap()
+        }
+    }
 }
 
