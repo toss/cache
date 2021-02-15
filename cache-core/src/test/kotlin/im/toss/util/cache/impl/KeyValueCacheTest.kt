@@ -904,8 +904,8 @@ class KeyValueCacheTest {
     @Test
     fun `multiGet은 캐시 데이터를 병렬로 조회한다`() {
         runBlocking {
-            // given
             val cache = testCache(ttl = 10000)
+
             (1..1000).map {
                 async {
                     cache.load("$it") { "v$it" }
@@ -915,6 +915,25 @@ class KeyValueCacheTest {
             cache.multiGet<String>(
                 (1..1000).map{"$it"}.toSet()
             ) equalsTo (1..1000).map { "$it" to "v$it" }.toMap()
+        }
+    }
+
+    @Test
+    fun `multiGetOrLoad은 캐시 데이터를 병렬로 조회하고 로딩한다`() {
+        runBlocking {
+            val cache = testCache(ttl = 10000)
+
+            val elapsedTime = measureTimeMillis {
+                cache.multiGetOrLoad(
+                    (1..1000).map { "$it" }.toSet()
+                ) { keys ->
+                    delay(100)
+                    keys.map { it to "v$it" }.toMap()
+                } equalsTo (1..1000).map { "$it" to "v$it" }.toMap()
+            }
+
+            println("1000 getOrLoad, $elapsedTime ms elapsed")
+            assertThat(elapsedTime).isLessThan(2000)
         }
     }
 }

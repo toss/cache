@@ -36,10 +36,32 @@ data class KeyValueCacheImpl<TKey: Any>(
     override suspend fun <T : Any> multiGet(keys: Set<TKey>, type: Type?): Map<TKey, T?> = coroutineScope {
         // parallel get
         keys
-            .chunked(100)
+            .chunked(100) // TODO configurable
             .flatMap {
                 it
                     .map { key -> async { key to get<T>(key, type) } }
+                    .awaitAll()
+            }
+            .toMap()
+    }
+
+    /**
+     * multiGetOrLoad
+     * 이 구현체는 bulk load를 지원하지 않는다
+     */
+    override suspend fun <T : Any> multiGetOrLoad(keys: Set<TKey>, type: Type?, fetch: suspend (Set<TKey>) -> Map<TKey, T>): Map<TKey, T?> = coroutineScope {
+        // parallel getOrLoad
+        keys
+            .chunked(100) // TODO configurable
+            .flatMap {
+                it
+                    .map { key ->
+                        async {
+                            key to getOrLoad(key, type) {
+                                fetch(setOf(key)).getValue(key)
+                            }
+                        }
+                    }
                     .awaitAll()
             }
             .toMap()
