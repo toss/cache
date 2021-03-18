@@ -1,6 +1,7 @@
 package im.toss.util.cache
 
 import im.toss.test.equalsTo
+import im.toss.util.cache.impl.MultiFieldCacheImpl
 import im.toss.util.data.serializer.StringSerializer
 import im.toss.util.repository.KeyFieldValueRepository
 import io.mockk.*
@@ -18,7 +19,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.system.measureTimeMillis
 
 class BlockingMultiFieldCacheTest {
-    fun testCache(repository: KeyFieldValueRepository? = null, ttl:Long = 100L, coldTime: Long = 0L, applyTtlIfHit: Boolean = true) = MultiFieldCache<String>(
+    fun testCache(repository: KeyFieldValueRepository? = null, ttl:Long = 100L, coldTime: Long = 0L, applyTtlIfHit: Boolean = true) = MultiFieldCacheImpl<String>(
         name = "dict_cache",
         keyFunction = Cache.KeyFunction { name, key -> "$name:{$key}" },
         lock = LocalMutexLock(5000),
