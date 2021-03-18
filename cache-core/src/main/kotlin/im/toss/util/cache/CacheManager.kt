@@ -1,5 +1,7 @@
 package im.toss.util.cache
 
+import im.toss.util.cache.impl.KeyValueCacheImpl
+import im.toss.util.cache.impl.MultiFieldCacheImpl
 import im.toss.util.cache.metrics.CacheMetrics
 import im.toss.util.cache.resources.RedisClusterCacheResources
 import im.toss.util.data.serializer.Serializer
@@ -45,7 +47,7 @@ class CacheManager(
         return keyValueCaches.computeIfAbsent(namespaceId) {
             val namespace = getNamespace(namespaceId)
             val resources = getResources(namespace.resourceId)
-            KeyValueCache<TKey>(
+            KeyValueCacheImpl<TKey>(
                 name = namespaceId,
                 keyFunction = keyFunction,
                 lock = resources.lock(namespace.options.run { lockTimeout.seconds }),
@@ -63,7 +65,17 @@ class CacheManager(
     ): KeyValueCache<TKey> {
         @Suppress("UNCHECKED_CAST")
         return keyValueCacheWithSerializers.computeIfAbsent(namespaceId to serializerId) {
-            keyValueCache<TKey>(namespaceId).copy(serializer = getSerializer(serializerId))
+            val namespace = getNamespace(namespaceId)
+            val resources = getResources(namespace.resourceId)
+            KeyValueCacheImpl<TKey>(
+                name = namespaceId,
+                keyFunction = keyFunction,
+                lock = resources.lock(namespace.options.run { lockTimeout.seconds }),
+                repository = resources.keyFieldValueRepository(),
+                serializer = getSerializer(serializerId),
+                options = namespace.options,
+                metrics = getMetrics(namespaceId)
+            )
         } as KeyValueCache<TKey>
     }
 
@@ -74,7 +86,7 @@ class CacheManager(
         return multiFieldCaches.computeIfAbsent(namespaceId) {
             val namespace = getNamespace(namespaceId)
             val resources = getResources(namespace.resourceId)
-            MultiFieldCache<TKey>(
+            MultiFieldCacheImpl<TKey>(
                 name = namespaceId,
                 keyFunction = keyFunction,
                 lock = resources.lock(namespace.options.run { lockTimeout.seconds }),
@@ -92,7 +104,17 @@ class CacheManager(
     ): MultiFieldCache<TKey> {
         @Suppress("UNCHECKED_CAST")
         return multiFieldCacheWithSerializers.computeIfAbsent(namespaceId to serializerId) {
-            multiFieldCache<TKey>(namespaceId).copy(serializer = getSerializer(serializerId))
+            val namespace = getNamespace(namespaceId)
+            val resources = getResources(namespace.resourceId)
+            MultiFieldCacheImpl<TKey>(
+                name = namespaceId,
+                keyFunction = keyFunction,
+                lock = resources.lock(namespace.options.run { lockTimeout.seconds }),
+                repository = resources.keyFieldValueRepository(),
+                serializer = getSerializer(serializerId),
+                options = namespace.options,
+                metrics = getMetrics(namespaceId)
+            )
         } as MultiFieldCache<TKey>
     }
 

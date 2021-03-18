@@ -1,7 +1,6 @@
 package im.toss.util.cache.blocking
 
-import im.toss.util.cache.CacheMode
-import im.toss.util.cache.KeyValueCache
+import im.toss.util.cache.*
 import im.toss.util.concurrent.lock.MutexLock
 import kotlinx.coroutines.runBlocking
 

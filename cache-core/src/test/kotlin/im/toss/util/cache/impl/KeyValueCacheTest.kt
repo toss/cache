@@ -1,26 +1,37 @@
-package im.toss.util.cache
+package im.toss.util.cache.impl
 
 import im.toss.test.equalsTo
+import im.toss.util.cache.*
 import im.toss.util.concurrent.lock.MutexLock
 import im.toss.util.coroutine.runWithTimeout
 import im.toss.util.data.serializer.StringSerializer
 import im.toss.util.repository.KeyFieldValueRepository
-import io.mockk.*
+import io.mockk.coEvery
+import io.mockk.coVerify
+import io.mockk.mockk
+import io.mockk.slot
 import kotlinx.coroutines.*
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.data.Offset
 import org.junit.jupiter.api.DynamicTest
+import org.junit.jupiter.api.DynamicTest.dynamicTest
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestFactory
-import org.junit.jupiter.api.DynamicTest.dynamicTest
 import org.junit.jupiter.api.assertThrows
 import java.time.ZonedDateTime
-import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import kotlin.system.measureTimeMillis
 
-class MultiFieldCacheTest {
-    private fun testCache(repository: KeyFieldValueRepository? = null, version: String = "0001", ttl:Long = 100L, coldTime: Long = 0L, applyTtlIfHit: Boolean = true, mutexLock: MutexLock = LocalMutexLock(5000), failurePolicy: CacheFailurePolicy = CacheFailurePolicy.ThrowException) = MultiFieldCache<String>(
+class KeyValueCacheTest {
+    private fun testCache(
+        repository: KeyFieldValueRepository? = null,
+        version: String = "0001",
+        ttl: Long = 100L,
+        coldTime: Long = 0L,
+        applyTtlIfHit: Boolean = true,
+        mutexLock: MutexLock = LocalMutexLock(5000),
+        failurePolicy: CacheFailurePolicy = CacheFailurePolicy.ThrowException
+    ) = KeyValueCacheImpl<String>(
         name = "dict_cache",
         keyFunction = Cache.KeyFunction { name, key -> "$name:{$key}" },
         lock = mutexLock,
@@ -33,8 +44,7 @@ class MultiFieldCacheTest {
             coldTime = coldTime,
             coldTimeUnit = TimeUnit.MILLISECONDS,
             applyTtlIfHit = applyTtlIfHit,
-            cacheFailurePolicy = failurePolicy,
-            lockTimeout = 10
+            cacheFailurePolicy = failurePolicy
         )
     )
 
@@ -53,13 +63,13 @@ class MultiFieldCacheTest {
                     runBlocking {
                         // given
                         val cache = testCache(ttl = given.ttl)
-                        cache.getOrLoad("key", "field") { given.value }
+                        cache.getOrLoad("key") { given.value }
 
                         // when
                         delay(given.delayTime)
 
                         // then
-                        cache.get<String>("key", "field").equalsTo(given.expected)
+                        cache.get<String>("key").equalsTo(given.expected)
                     }
                 }
             }
@@ -68,7 +78,7 @@ class MultiFieldCacheTest {
     @TestFactory
     fun `Cache의 TTL에 도래하기전 hit되면, TTL이 연장된다`(): List<DynamicTest> {
         data class Given(
-            val ttl: Long, val hitTime:Long, val delayTime: Long, val value: String, val expected: String?
+            val ttl: Long, val hitTime: Long, val delayTime: Long, val value: String, val expected: String?
         )
         return listOf(
             Given(ttl = 100, hitTime = 50, delayTime = 10, value = "value", expected = "value"),
@@ -80,15 +90,15 @@ class MultiFieldCacheTest {
                     runBlocking {
                         // given
                         val cache = testCache(ttl = given.ttl)
-                        cache.getOrLoad("key", "field") { given.value }
+                        cache.getOrLoad("key") { given.value }
 
                         // when
                         delay(given.hitTime)
-                        cache.get<String>("key", "field").equalsTo(given.value)
+                        cache.get<String>("key").equalsTo(given.value)
                         delay(given.delayTime)
 
                         // then
-                        cache.get<String>("key", "field").equalsTo(given.expected)
+                        cache.get<String>("key").equalsTo(given.expected)
                     }
                 }
             }
@@ -98,16 +108,16 @@ class MultiFieldCacheTest {
     fun `getOrLoad의 applyTtlIfHit가 false이면, hit시 ttl이 연장되지 않는다`() {
         runBlocking {
             // given
-            val cache = testCache(ttl = 100, applyTtlIfHit = false)
-            cache.getOrLoad("key", "field") { "preset" }
+            val cache = testCache(null, ttl = 100, applyTtlIfHit = false)
+            cache.getOrLoad("key") { "preset" }
 
             // when
             delay(50)
-            cache.getOrLoad<String>("key", "field") { "reloaded" }
+            cache.getOrLoad("key") { "reloaded" }
             delay(55)
 
             // then
-            cache.get<String>("key", "field").equalsTo(null)
+            cache.get<String>("key").equalsTo(null)
         }
     }
 
@@ -117,15 +127,15 @@ class MultiFieldCacheTest {
         runBlocking {
             // given
             val cache = testCache(ttl = 1000)
-            cache.getOrLoad("key", "field1") { "value1" }
-            cache.getOrLoad("key", "field2") { "value2" }
+            cache.getOrLoad("key1") { "value1" }
+            cache.getOrLoad("key2") { "value2" }
 
             // when
-            cache.evict("key")
+            cache.evict("key1")
 
             // then
-            cache.get<String>("key", "field1").equalsTo(null)
-            cache.get<String>("key", "field2").equalsTo(null)
+            cache.get<String>("key1").equalsTo(null)
+            cache.get<String>("key2").equalsTo("value2")
         }
     }
 
@@ -137,9 +147,9 @@ class MultiFieldCacheTest {
             (1..cacheCount).forEach { cacheVersion ->
                 val caches = (1..cacheCount).associateWith { version -> testCache(repository = repository, version = "$version", ttl = 1000) }
 
-                caches.forEach { (version, cache) -> cache.getOrLoad("key", "field") { "value:$version" } }
+                caches.forEach { (version, cache) -> cache.getOrLoad("key") { "value:$version" } }
                 (caches[cacheVersion] ?: error("")).evict("key")
-                caches.values.forEach { it.get<String>("key", "field").equalsTo(null) }
+                caches.values.forEach { it.get<String>("key").equalsTo(null) }
             }
         }
     }
@@ -153,20 +163,21 @@ class MultiFieldCacheTest {
             val cacheV2 = testCache(repository = repository, version = "v2", ttl = 1000)
 
             // when
-            cacheV1.getOrLoad("key", "field") { "value:v1" }
-            cacheV2.getOrLoad("key", "field") { "value:v2" }
+            cacheV1.getOrLoad("key") { "value:v1" }
+            cacheV2.getOrLoad("key") { "value:v2" }
 
             // then
-            cacheV1.get<String>("key", "field").equalsTo("value:v1")
-            cacheV2.get<String>("key", "field").equalsTo("value:v2")
+            cacheV1.get<String>("key").equalsTo("value:v1")
+            cacheV2.get<String>("key").equalsTo("value:v2")
         }
     }
+
 
     // evict 이후 cold time 테스트
     @TestFactory
     fun `evict이후 설정된 coldtime동안 cache에 적재 되지 않는다`(): List<DynamicTest> {
         data class Given(
-            val ttl: Long, val coldTime:Long, val delayTime: Long,
+            val ttl: Long, val coldTime: Long, val delayTime: Long,
             val initValue: String, val updateValue: String, val expected: String?
         )
         return listOf(
@@ -182,7 +193,7 @@ class MultiFieldCacheTest {
                         val repository = TestKeyFieldValueRepository()
                         val cache = testCache(repository = repository, ttl = given.ttl, coldTime = given.coldTime)
                         println("coldTime: ${given.coldTime} ms")
-                        cache.getOrLoad("key", "field") { given.initValue }
+                        cache.getOrLoad("key") { given.initValue }
                         println("given: ${repository.toJson()}")
 
                         // when
@@ -190,54 +201,18 @@ class MultiFieldCacheTest {
                         println("evicted: ${repository.toJson()}")
                         delay(given.delayTime)
                         println("delay ${given.delayTime}ms")
-                        cache.getOrLoad("key", "field") { given.updateValue }
+                        cache.getOrLoad("key") { given.updateValue }
                         println("loaded: ${repository.toJson()}")
 
                         // then
-                        cache.get<String>("key", "field").equalsTo(given.expected)
+                        cache.get<String>("key").equalsTo(given.expected)
                     }
                 }
             }
     }
+
     abstract class DataSource {
-        abstract suspend fun get(key: String, field:String, value: String): String
-    }
-
-    @Test
-    fun `getOrLoad로 같은 키를 가지는 데이터 소스의 읽기를 병렬로 수행하면, 하나만 실행된다 - Collapsed Forwarding`() {
-        runBlocking {
-            var lastCaptured = "NOT_CAPTURED"
-            val slot = slot<String>()
-            val dataSource = mockk<DataSource>()
-            coEvery {
-                dataSource.get(any(), any(), capture(slot))
-            } coAnswers {
-                delay(200)
-                lastCaptured = slot.captured
-                slot.captured
-            }
-
-            // given
-            val cache = testCache(ttl = 1000)
-
-            // when
-            listOf(
-                "first",
-                "second",
-                "third"
-            )
-                .map { fetched ->
-                    async {
-                        cache.getOrLoad("key", "field") {
-                            dataSource.get("key", "field", fetched)
-                        }
-                    }
-                }.awaitAll()
-
-            // then
-            cache.get<String>("key", "field").equalsTo(lastCaptured)
-            coVerify(exactly = 1) { dataSource.get(any(), any(), any()) }
-        }
+        abstract suspend fun get(key: String, value: String): String
     }
 
     @Test
@@ -247,7 +222,7 @@ class MultiFieldCacheTest {
             val slot = slot<String>()
             val dataSource = mockk<DataSource>()
             coEvery {
-                dataSource.get(any(), any(), capture(slot))
+                dataSource.get(any(), capture(slot))
             } coAnswers {
                 delay(200)
                 lastCaptured = slot.captured
@@ -265,25 +240,62 @@ class MultiFieldCacheTest {
             )
                 .map { fetched ->
                     async {
-                        cache.load("key", "field") {
-                            dataSource.get("key", "field", fetched)
+                        cache.load("key") {
+                            dataSource.get("key", fetched)
                         }
                     }
                 }.awaitAll()
 
             // then
-            cache.get<String>("key", "field").equalsTo(lastCaptured)
-            coVerify(exactly = 3) { dataSource.get(any(), any(), any()) }
+            cache.get<String>("key").equalsTo(lastCaptured)
+            coVerify(exactly = 3) { dataSource.get(any(), any()) }
         }
     }
 
     @Test
-    fun `같은 키의 다른 필드를 가지는 데이터 소스의 읽기는 동시에 실행된다 - Collapsed Forwarding`() {
+    fun `getOrLoad로 같은 키를 가지는 데이터 소스의 읽기를 병렬로 수행하면, 하나만 실행된다 - Collapsed Forwarding`() {
+        runBlocking {
+            var lastCaptured = "NOT_CAPTURED"
+            val slot = slot<String>()
+            val dataSource = mockk<DataSource>()
+            coEvery {
+                dataSource.get(any(), capture(slot))
+            } coAnswers {
+                delay(200)
+                lastCaptured = slot.captured
+                slot.captured
+            }
+
+            // given
+            val cache = testCache(ttl = 1000)
+
+            // when
+            listOf(
+                "first",
+                "second",
+                "third"
+            )
+                .map { fetched ->
+                    async {
+                        cache.getOrLoad("key") {
+                            dataSource.get("key", fetched)
+                        }
+                    }
+                }.awaitAll()
+
+            // then
+            cache.get<String>("key").equalsTo(lastCaptured)
+            coVerify(exactly = 1) { dataSource.get(any(), any()) }
+        }
+    }
+
+    @Test
+    fun `다른 키를 가지는 데이터 소스의 읽기는 동시에 실행된다 - Collapsed Forwarding`() {
         val fetchDelay = 100L
         val slot = slot<String>()
         val dataSource = mockk<DataSource>()
         coEvery {
-            dataSource.get(any(), any(), capture(slot))
+            dataSource.get(any(), capture(slot))
         } coAnswers {
             delay(fetchDelay)
             slot.captured
@@ -291,11 +303,11 @@ class MultiFieldCacheTest {
 
         // given
         val given = listOf(
-            "field1" to "value1",
-            "field2" to "value2",
-            "field3" to "value3",
-            "field4" to "value4",
-            "field5" to "value5"
+            "key1" to "value1",
+            "key2" to "value2",
+            "key3" to "value3",
+            "key4" to "value4",
+            "key5" to "value5"
         )
 
         val cache = testCache(ttl = 1000)
@@ -306,8 +318,8 @@ class MultiFieldCacheTest {
                 given
                     .map {
                         async {
-                            cache.getOrLoad("key", it.first) {
-                                dataSource.get("key", it.first, it.second)
+                            cache.getOrLoad(it.first) {
+                                dataSource.get(it.first, it.second)
                             }
                         }
                     }.awaitAll()
@@ -319,7 +331,7 @@ class MultiFieldCacheTest {
         // then
         assertThat(elapsed).isCloseTo(fetchDelay, Offset.offset(100L))
         given.forEach {
-            coVerify(exactly = 1) { dataSource.get("key", it.first, it.second) }
+            coVerify(exactly = 1) { dataSource.get(it.first, it.second) }
         }
     }
 
@@ -343,7 +355,7 @@ class MultiFieldCacheTest {
             listOf(
                 async {
                     println("write begin")
-                    val fetched = cache.getOrLoad("key", "field") {
+                    val fetched = cache.getOrLoad("key") {
                         delay(500)
                         "delayValue"
                     }
@@ -358,64 +370,7 @@ class MultiFieldCacheTest {
             ).awaitAll()
 
             println("then: ${repository.toJson()}")
-            cache.get<String>("key", "field").equalsTo(null)
-        }
-    }
-
-
-    @Test
-    fun `여러 필드에서 데이터 소스로부터 값을 읽고, 적재가 되기 전, evict 발생 시, 값이 적재되지 않아야한다`() {
-        runBlocking(Executors.newFixedThreadPool(4).asCoroutineDispatcher()) {
-            val repository = TestKeyFieldValueRepository()
-            val cache = testCache(repository = repository, ttl = 5000)
-
-            // given
-            println("given: ${repository.toJson()}")
-            val startTime = System.currentTimeMillis()
-            fun now() = (System.currentTimeMillis() - startTime).toString().padStart(5, ' ')
-            fun log(value: String) = println(" ${now()} $value")
-
-            // when
-            // |------------------------- load(key, "slow") ------------------------->| FAILED
-            // |--- load(key, "1") --->| LOADED
-            //                            |- evict(key)->|
-            //                                             |--- load(key, "2") --->| LOADED
-            // ==> cache == { key: {"2":"value"} }
-            listOf(
-                async {
-                    log("load1 begin")
-                    val fetched = cache.getOrLoad("key", "short1") {
-                        delay(100)
-                        "shortDelayValue1"
-                    }
-                    log("load1 end: $fetched  => ${repository.toJson()}")
-                },
-                async {
-                    delay(200)
-                    log("load2 begin")
-                    val fetched = cache.getOrLoad("key", "short2") {
-                        delay(200)
-                        "shortDelayValue2"
-                    }
-                    log("load2 end: $fetched  => ${repository.toJson()}")
-                },
-                async {
-                    log("load3 begin")
-                    val fetched = cache.getOrLoad("key", "long1") {
-                        delay(1500)
-                        "longDelayValue"
-                    }
-                    log("load3 end: $fetched  => ${repository.toJson()}")
-                },
-                async {
-                    delay(150)
-                    cache.evict("key")
-                    log("evicted  => ${repository.toJson()}")
-                }
-            ).awaitAll()
-
-            log("end  => ${repository.toJson()}")
-            cache.get<String>("key", "long1").equalsTo(null)
+            cache.get<String>("key").equalsTo(null)
         }
     }
 
@@ -424,13 +379,13 @@ class MultiFieldCacheTest {
         runBlocking {
             // given
             val cache = testCache(ttl = 100)
-            cache.getOrLoad("key", "field") { "preset" }
+            cache.getOrLoad("key") { "preset" }
 
             // when
-            cache.load("key", "field") { "reloaded" }
+            cache.load("key") { "reloaded" }
 
             // then
-            cache.get<String>("key", "field").equalsTo("reloaded")
+            cache.get<String>("key").equalsTo("reloaded")
         }
     }
 
@@ -439,31 +394,30 @@ class MultiFieldCacheTest {
         runBlocking {
             // given
             val cache = testCache(ttl = 1000, coldTime = -1L)
-            cache.getOrLoad("key", "field") { "preset" }
+            cache.getOrLoad("key") { "preset" }
 
             // when
             cache.evict("key")
-            cache.load("key", "field") { "reloaded" }
+            cache.load("key") { "reloaded" }
 
             // then
-            cache.get<String>("key", "field").equalsTo("reloaded")
+            cache.get<String>("key").equalsTo("reloaded")
         }
     }
-
 
     @Test
     fun `evictionOnly 모드일때도 evict이 작동한다`() {
         runBlocking {
             // given
-            val cache = testCache(null, ttl = 1000)
-            cache.getOrLoad("key", "field") { "preset" }
+            val cache = testCache(ttl = 1000)
+            cache.getOrLoad("key") { "preset" }
 
             // when
             cache.options.cacheMode = CacheMode.EVICTION_ONLY
             cache.evict("key")
 
             // then
-            cache.get<String>("key", "field") equalsTo null
+            cache.get<String>("key") equalsTo null
         }
     }
 
@@ -474,14 +428,14 @@ class MultiFieldCacheTest {
             // given
             val repository = TestKeyFieldValueRepository()
             val cache = testCache(repository, ttl = 1000)
-            cache.getOrLoad("key", "field") { "preset" }
+            cache.getOrLoad("key") { "preset" }
 
             // when
             cache.options.cacheMode = CacheMode.EVICTION_ONLY
-            cache.load("key", "field") { "loaded" }
+            cache.load("key") { "loaded" }
 
             // then
-            cache.get<String>("key", "field") equalsTo null
+            cache.get<String>("key") equalsTo null
             repository.toMap().size equalsTo 0
         }
     }
@@ -490,21 +444,21 @@ class MultiFieldCacheTest {
     fun `evictionOnly 모드일때 load는 fetch를 수행하지 않는다`() {
         runBlocking {
             val mock = mockk<DataSource>()
-            coEvery { mock.get(any(), any(), any()) } coAnswers { "loaded" }
+            coEvery { mock.get(any(), any()) } coAnswers { "loaded" }
 
             // given
             val repository = TestKeyFieldValueRepository()
             val cache = testCache(repository, ttl = 1000)
-            cache.getOrLoad("key", "field") { "preset" }
+            cache.getOrLoad("key") { "preset" }
 
             // when
             cache.options.cacheMode = CacheMode.EVICTION_ONLY
-            cache.load("key", "field") { mock.get("", "", "") }
+            cache.load("key") { mock.get("", "") }
 
             // then
-            cache.get<String>("key", "field") equalsTo null
+            cache.get<String>("key") equalsTo null
             repository.toMap().size equalsTo 0
-            coVerify(exactly = 0) { mock.get(any(), any(), any()) }
+            coVerify(exactly = 0) { mock.get(any(), any()) }
         }
     }
 
@@ -513,13 +467,13 @@ class MultiFieldCacheTest {
         runBlocking {
             // given
             val cache = testCache(ttl = 1000)
-            cache.getOrLoad("key", "field") { "preset" }
+            cache.getOrLoad("key") { "preset" }
 
             // when
             cache.options.cacheMode = CacheMode.EVICTION_ONLY
 
             // then
-            cache.get<String>("key", "field") equalsTo null
+            cache.get<String>("key") equalsTo null
         }
     }
 
@@ -527,21 +481,20 @@ class MultiFieldCacheTest {
     fun `evictionOnly 모드일때 getOrLoad시 항상 fetch하고 적재 되지 않는다`() {
         runBlocking {
             // given
-            val repository = TestKeyFieldValueRepository()
-            val cache = testCache(repository, ttl = 1000)
-            cache.getOrLoad("key", "field") { "preset" }
+            val cache = testCache(ttl = 1000)
+            cache.getOrLoad("key") { "preset" }
 
             // when
             cache.options.cacheMode = CacheMode.EVICTION_ONLY
 
             // then
-            cache.getOrLoad("key", "field") { "loaded" } equalsTo "loaded"
-            cache.get<String>("key", "field") equalsTo null
+            cache.getOrLoad("key") { "loaded" } equalsTo "loaded"
+            cache.get<String>("key") equalsTo null
         }
     }
 
     @Test
-    fun `cacheFailurePolicy가 fallbackToOrigin일때, load시 Mutex가 acquire에서 timeout이 발생하는경우, 캐시 로딩이 무시된다`() {
+    fun `cacheFailurePolicy가 fallbackToOrigin일때, load시 timeout이 되는경우, 캐시 로딩이 무시된다`() {
         runBlocking {
             val mutexLock = mockk<MutexLock>(relaxed = true)
             coEvery { mutexLock.acquire(any(), any(), any()) } coAnswers {
@@ -554,10 +507,10 @@ class MultiFieldCacheTest {
             val cache = testCache(mutexLock = mutexLock, failurePolicy = CacheFailurePolicy.FallbackToOrigin)
 
             withTimeout(1000) {
-                cache.load("key", "field") { "hello" }
+                cache.load("key") { "hello" }
             }
 
-            val result = cache.get<String>("key", "field")
+            val result = cache.get<String>("key")
             println(result)
             result equalsTo null
         }
@@ -572,9 +525,9 @@ class MultiFieldCacheTest {
             }
 
             val cache = testCache(mutexLock = mutexLock, failurePolicy = CacheFailurePolicy.FallbackToOrigin)
-            cache.load("key", "field") { "hello" }
+            cache.load("key") { "hello" }
 
-            val result = cache.get<String>("key", "field")
+            val result = cache.get<String>("key")
             println(result)
             result equalsTo null
         }
@@ -594,10 +547,10 @@ class MultiFieldCacheTest {
             val cache = testCache(mutexLock = mutexLock, failurePolicy = CacheFailurePolicy.FallbackToOrigin)
 
             withTimeout(1000) {
-                cache.load("key", "field") { "hello" }
+                cache.load("key") { "hello" }
             }
 
-            val result = cache.get<String>("key", "field")
+            val result = cache.get<String>("key")
             println(result)
             result equalsTo null
         }
@@ -618,7 +571,7 @@ class MultiFieldCacheTest {
             }
 
             val cache = testCache(repository = repository, failurePolicy = CacheFailurePolicy.FallbackToOrigin)
-            cache.load("key", "field") { "hello" }
+            cache.load("key") { "hello" }
         }
     }
 
@@ -638,7 +591,7 @@ class MultiFieldCacheTest {
 
             val cache = testCache(repository = repository, failurePolicy = CacheFailurePolicy.FallbackToOrigin)
 
-            val result = cache.get<String>("key", "field")
+            val result = cache.get<String>("key")
             println(result)
             result equalsTo null
         }
@@ -667,9 +620,20 @@ class MultiFieldCacheTest {
 
             val cache = testCache(repository = repository, failurePolicy = CacheFailurePolicy.FallbackToOrigin)
 
-            val result = cache.get<String>("key", "field")
+            val result = cache.get<String>("key")
             println(result)
             result equalsTo null
+        }
+    }
+
+    @Test
+    fun `origin이 delay되어도 timeout이 되지 않는다`() {
+        runBlocking {
+            val cache = testCache(ttl = 100)
+            cache.getOrLoad("key") {
+                delay(1000)
+                "origin"
+            } equalsTo "origin"
         }
     }
 
@@ -677,8 +641,8 @@ class MultiFieldCacheTest {
     fun `특정 키를 lockForLoad로 잠금을 하면 값을 쓸때까지 잠긴다`() {
         runBlocking {
             val cache = testCache()
-            val loader = cache.lockForLoad<String>("key", "field")
-            cache.get<String>("key", "field") equalsTo null
+            val loader = cache.lockForLoad<String>("key")
+            cache.get<String>("key") equalsTo null
             println("${ZonedDateTime.now()}> lock")
 
             val job = async {
@@ -691,26 +655,9 @@ class MultiFieldCacheTest {
                 }
             }
 
-            cache.getOrLoad("key", "field") { "NEW" } equalsTo "HELLO"
+            cache.getOrLoad("key") { "NEW" } equalsTo "HELLO"
             println("${ZonedDateTime.now()}> after get")
             job.await()
-        }
-    }
-
-    @Test
-    fun `getOrLock에서 데이터 로딩 중 예외가 발생하면 락이 즉시 풀려야한다`() {
-        val cache = testCache()
-        val before = System.nanoTime()
-        assertThrows<Exception> {
-            runBlocking {
-                cache.getOrLoad<String>("key", "field") { throw Exception() }
-            }
-        }
-        runBlocking {
-            val cached = cache.getOrLoad("key", "field") { "HELLO" }
-            val elapsed = TimeUnit.MILLISECONDS.convert(System.nanoTime() - before, TimeUnit.NANOSECONDS)
-            cached equalsTo "HELLO"
-            assertThat(elapsed).isLessThan(200)
         }
     }
 
@@ -718,7 +665,7 @@ class MultiFieldCacheTest {
     fun `특정 키를 getOrLockForLoad로 잠금을 하면 값을 쓸때까지 잠긴다`() {
         runBlocking {
             val cache = testCache()
-            val result = cache.getOrLockForLoad<String>("key", "field")
+            val result = cache.getOrLockForLoad<String>("key")
             result.value equalsTo null
             println("${ZonedDateTime.now()}> lock")
 
@@ -732,7 +679,7 @@ class MultiFieldCacheTest {
                 }
             }
 
-            cache.getOrLoad("key", "field") { "NEW" } equalsTo "HELLO"
+            cache.getOrLoad("key") { "NEW" } equalsTo "HELLO"
             println("${ZonedDateTime.now()}> after get")
             job.await()
         }
@@ -742,8 +689,8 @@ class MultiFieldCacheTest {
     fun `특정 키를 getOrLockForLoad로 잠금을 하고 release를 할때까지 잠긴다`() {
         runBlocking {
             val cache = testCache()
-            cache.getOrLoad("key", "field") { "FIRST" }
-            val loader = cache.lockForLoad<String>("key", "field")
+            cache.getOrLoad("key") { "FIRST" }
+            val loader = cache.lockForLoad<String>("key")
             println("${ZonedDateTime.now()}> lock")
 
             val job = async {
@@ -756,7 +703,7 @@ class MultiFieldCacheTest {
                 }
             }
 
-            cache.getOrLoad("key", "field") { "NEW" } equalsTo "FIRST"
+            cache.getOrLoad("key") { "NEW" } equalsTo "FIRST"
             println("${ZonedDateTime.now()}> after get")
             job.await()
         }
@@ -765,14 +712,14 @@ class MultiFieldCacheTest {
     @Test
     fun `낙관적 락으로 캐시에 값을 기록한다`() {
         runBlocking {
-            val key = "key"; val field = "field"
+            val key = "key"
             val cache = testCache(ttl = 10000)
-            cache.load(key, field) { "VER0" }
+            cache.load(key) { "VER0" }
 
-            val lock = cache.optimisticLockForLoad<String>(key, field)
+            val lock = cache.optimisticLockForLoad<String>(key)
             lock.load("VER1")
 
-            cache.get<String>(key, field) equalsTo "VER1"
+            cache.get<String>(key) equalsTo "VER1"
         }
     }
 
@@ -780,15 +727,15 @@ class MultiFieldCacheTest {
     @Test
     fun `낙관적 락 중 키가 evict되면 기록하지 않는다`() {
         runBlocking {
-            val key = "key"; val field = "field"
+            val key = "key"
             val cache = testCache(ttl = 10000)
-            cache.load(key, field) { "VER0" }
+            cache.load(key) { "VER0" }
 
-            val lock = cache.optimisticLockForLoad<String>(key, field)
+            val lock = cache.optimisticLockForLoad<String>(key)
             cache.evict(key)
             lock.load("VER1")
 
-            cache.get<String>(key, field) equalsTo null
+            cache.get<String>(key) equalsTo null
         }
     }
 
@@ -805,36 +752,36 @@ class MultiFieldCacheTest {
         */
 
         runBlocking {
-            val key = "key"; val field = "field"
+            val key = "key"
             val cache = testCache(ttl = 10000)
-            cache.load(key, field) { "VER0" }
-            cache.get<String>(key, field) equalsTo "VER0"
+            cache.load(key) { "VER0" }
+            cache.get<String>(key) equalsTo "VER0"
             log("init")
             val jobs = listOf(
                 async {
                     log("[1] lock for VER1")
-                    val lock = cache.optimisticLockForLoad<String>(key, field)
+                    val lock = cache.optimisticLockForLoad<String>(key)
                     log("[1] lock version: ${lock.version}")
                     delay(200)
                     lock.load("VER1")
                     log("[1] loaded VER1")
-                    cache.get<String>(key, field) equalsTo null
+                    cache.get<String>(key) equalsTo null
                 },
                 async {
                     log("[2] lock for VER2")
-                    val lock = cache.optimisticLockForLoad<String>(key, field)
+                    val lock = cache.optimisticLockForLoad<String>(key)
                     log("[2] lock version: ${lock.version}")
                     delay(400)
                     lock.load("VER2")
                     log("[2] loaded VER2")
-                    cache.get<String>(key, field) equalsTo null
+                    cache.get<String>(key) equalsTo null
                 }
             )
             log("get expect VER0")
-            cache.get<String>(key, field) equalsTo "VER0"
+            cache.get<String>(key) equalsTo "VER0"
             delay(300)
             jobs.awaitAll()
-            cache.get<String>(key, field) equalsTo null
+            cache.get<String>(key) equalsTo null
         }
     }
 
@@ -851,37 +798,37 @@ class MultiFieldCacheTest {
         */
 
         runBlocking {
-            val key = "key"; val field = "field"
+            val key = "key"
             val cache = testCache(ttl = 10000)
-            cache.load(key, field) { "VER0" }
-            cache.get<String>(key, field) equalsTo "VER0"
+            cache.load(key) { "VER0" }
+            cache.get<String>(key) equalsTo "VER0"
             log("init")
             val jobs = listOf(
                 async {
                     log("[1] lock for VER1")
-                    val lock = cache.optimisticLockForLoad<String>(key, field)
+                    val lock = cache.optimisticLockForLoad<String>(key)
                     log("[1] lock version: ${lock.version}")
                     delay(500)
                     lock.load("VER1")
                     log("[1] loaded VER1")
                     // 먼저 시작했고, 늦게 로딩된 경우, 어떤 값이 더 최신 데이터인지 알기 어렵기때문에 캐시를 비운다.
-                    cache.get<String>(key, field) equalsTo null
+                    cache.get<String>(key) equalsTo null
                 },
                 async {
                     delay(100)
                     log("[2] lock for VER2")
-                    val lock = cache.optimisticLockForLoad<String>(key, field)
+                    val lock = cache.optimisticLockForLoad<String>(key)
                     log("[2] lock version: ${lock.version}")
                     delay(100)
                     lock.load("VER2")
                     log("[2] loaded VER2")
                     // 뒤에 시작했고, 빨리 로딩된 경우 캐시에 데이터가 로딩 된다.
-                    cache.get<String>(key, field) equalsTo "VER2"
+                    cache.get<String>(key) equalsTo "VER2"
                 }
             )
             jobs.awaitAll()
             // 결국 캐시에 값은 없어진다
-            cache.get<String>(key, field) equalsTo null
+            cache.get<String>(key) equalsTo null
         }
     }
 
@@ -899,36 +846,36 @@ class MultiFieldCacheTest {
         */
 
         runBlocking {
-            val key = "key"; val field = "field"
+            val key = "key"
             val cache = testCache(ttl = 10000)
-            cache.load(key, field) { "VER0" }
-            cache.get<String>(key, field) equalsTo "VER0"
+            cache.load(key) { "VER0" }
+            cache.get<String>(key) equalsTo "VER0"
             log("init")
             val jobs = listOf(
                 async {
                     log("[1] optimistic lock for VER1")
-                    val lock = cache.optimisticLockForLoad<String>(key, field)
+                    val lock = cache.optimisticLockForLoad<String>(key)
                     log("[1] lock version: ${lock.version}")
                     delay(200)
                     lock.load("VER1")
                     log("[1] loaded VER1")
-                    cache.get<String>(key, field) equalsTo null
+                    cache.get<String>(key) equalsTo null
                 },
                 async {
                     log("[2] pessimistic lock for VER2")
-                    val lock = cache.lockForLoad<String>(key, field)
+                    val lock = cache.lockForLoad<String>(key)
                     log("[2] lock version: ${lock.version}")
                     delay(400)
                     lock.load("VER2")
                     log("[2] loaded VER2")
-                    cache.get<String>(key, field) equalsTo null
+                    cache.get<String>(key) equalsTo null
                 }
             )
             log("get expect VER0")
-            cache.get<String>(key, field) equalsTo "VER0"
+            cache.get<String>(key) equalsTo "VER0"
             delay(300)
             jobs.awaitAll()
-            cache.get<String>(key, field) equalsTo null
+            cache.get<String>(key) equalsTo null
         }
     }
 
@@ -939,18 +886,54 @@ class MultiFieldCacheTest {
             val cache = testCache(ttl = 10)
 
             // when
-            cache.getOrLoad("key", "field") { "1" }
-            cache.getOrLoad("key", "field") { "1" }
-            cache.getOrLoad("key", "field") { "1" }
-            cache.getOrLoad("key", "field") { "1" }
+            cache.getOrLoad("key") { "1" }
+            cache.getOrLoad("key") { "1" }
+            cache.getOrLoad("key") { "1" }
+            cache.getOrLoad("key") { "1" }
             cache.evict("key")
-            cache.getOrLoad("key", "field") { "1" }
+            cache.getOrLoad("key") { "1" }
 
             // then
             cache.missCount equalsTo 2L
             cache.hitCount equalsTo 3L
             cache.putCount equalsTo 2L
             cache.evictionCount equalsTo 1L
+        }
+    }
+
+    @Test
+    fun `multiGet은 캐시 데이터를 병렬로 조회한다`() {
+        runBlocking {
+            val cache = testCache(ttl = 10000)
+
+            (1..1000).map {
+                async {
+                    cache.load("$it") { "v$it" }
+                }
+            }.awaitAll()
+
+            cache.multiGet<String>(
+                (1..1000).map{"$it"}.toSet()
+            ) equalsTo (1..1000).map { "$it" to "v$it" }.toMap()
+        }
+    }
+
+    @Test
+    fun `multiGetOrLoad은 캐시 데이터를 병렬로 조회하고 로딩한다`() {
+        runBlocking {
+            val cache = testCache(ttl = 10000)
+
+            val elapsedTime = measureTimeMillis {
+                cache.multiGetOrLoad(
+                    (1..1000).map { "$it" }.toSet()
+                ) { keys ->
+                    delay(100)
+                    keys.map { it to "v$it" }.toMap()
+                } equalsTo (1..1000).map { "$it" to "v$it" }.toMap()
+            }
+
+            println("1000 getOrLoad, $elapsedTime ms elapsed")
+            assertThat(elapsedTime).isLessThan(2000)
         }
     }
 }
