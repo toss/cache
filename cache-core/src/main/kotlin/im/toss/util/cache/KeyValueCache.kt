@@ -30,5 +30,5 @@ abstract class KeyValueCache<TKey: Any> {
     suspend inline fun <reified T: Any> load(key: TKey, noinline fetch: (suspend () -> T)) = load(key, getType<T>(), fetch)
 
     suspend inline fun <reified T: Any> multiGet(keys: Set<TKey>): Map<TKey, T?> = multiGet(keys, getType<T>())
-    suspend inline fun <reified T: Any> multiGetOrLoad(keys: Set<TKey>, noinline fetch: (suspend (Set<TKey>) -> Map<TKey, T>)): Map<TKey, T?> = multiGetOrLoad(keys, getType<T>(), fetch)
+    suspend inline fun <reified T: Any> multiGetOrLoad(keys: Set<TKey>, noinline fetch: (suspend (Set<TKey>) -> Map<TKey, T>)): Map<TKey, T> = multiGetOrLoad(keys, getType<T>(), fetch)
 }
