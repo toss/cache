@@ -937,7 +937,7 @@ class MultiFieldCacheTest {
     fun `cache 사용 현황을 확인 할 수 있다`() {
         runBlocking {
             // given
-            val cache = testCache(ttl = 10)
+            val cache = testCache(ttl = 1000)
 
             // when
             cache.getOrLoad("key", "field") { "1" }
