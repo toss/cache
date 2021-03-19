@@ -49,7 +49,7 @@ data class KeyValueCacheImpl<TKey: Any>(
      * multiGetOrLoad
      * 이 구현체는 bulk load를 지원하지 않는다
      */
-    override suspend fun <T : Any> multiGetOrLoad(keys: Set<TKey>, type: Type?, fetch: suspend (Set<TKey>) -> Map<TKey, T>): Map<TKey, T?> = coroutineScope {
+    override suspend fun <T : Any> multiGetOrLoad(keys: Set<TKey>, type: Type?, fetch: suspend (Set<TKey>) -> Map<TKey, T>): Map<TKey, T> = coroutineScope {
         // parallel getOrLoad
         keys
             .chunked(100) // TODO configurable
