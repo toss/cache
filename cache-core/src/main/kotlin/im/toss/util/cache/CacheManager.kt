@@ -11,6 +11,7 @@ import im.toss.util.data.serializer.ByteArraySerializer
 import im.toss.util.properties.InheritableProperties
 import io.lettuce.core.cluster.RedisClusterClient
 import io.micrometer.core.instrument.MeterRegistry
+import io.micrometer.core.instrument.Tag
 import kotlinx.coroutines.runBlocking
 import java.util.concurrent.ConcurrentHashMap
 
@@ -128,6 +129,7 @@ class CacheManager(
 
 
     private var keyFunction: Cache.KeyFunction = Cache.KeyFunction { name, key -> "cache:$name:$key" }
+    private var customTagsFunction: Cache.CustomTagsFunction = Cache.CustomTagsFunction { namespaceId, cacheMetrics -> emptyList() }
 
     private val resources = ConcurrentHashMap<String, CacheResources>()
     private val namespaces = ConcurrentHashMap<String, CacheNamespace>()
@@ -140,6 +142,10 @@ class CacheManager(
 
     private fun setKeyFunction(keyFunction: Cache.KeyFunction) {
         this.keyFunction = keyFunction
+    }
+
+    private fun setCustomTags(customTagsFunction: Cache.CustomTagsFunction) {
+        this.customTagsFunction = customTagsFunction
     }
 
     private fun addResource(resourceId: String, resources: CacheResources) {
@@ -162,7 +168,10 @@ class CacheManager(
 
         namespaces.computeIfAbsent(namespaceId) {
             metricises.computeIfAbsent(namespaceId) {
-                CacheMetrics(namespaceId).metrics(meterRegistry)
+                CacheMetrics(namespaceId)
+                    .apply {
+                        metrics(meterRegistry, customTagsFunction.function(namespaceId, this))
+                    }
             }
             namespace
         }
@@ -200,6 +209,10 @@ class CacheManager(
     class ResourcesDefinition(private val cacheManager: CacheManager) {
         fun keyFunction(block: (name: String, key: Any) -> String) {
             cacheManager.setKeyFunction(Cache.KeyFunction(block))
+        }
+
+        fun metricsCustomTags(block: (namespaceId: String, cacheMetrics: CacheMetrics) -> List<Tag>) {
+            cacheManager.setCustomTags(Cache.CustomTagsFunction(block))
         }
 
         fun redisCluster(
