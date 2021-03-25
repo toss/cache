@@ -17,8 +17,8 @@ class TossCacheConfiguration {
         tossCacheProperties: TossCacheProperties,
         dsl: List<CacheResourcesDsl>
     ) = CacheManager(meterRegistry).also { cacheManager ->
-        cacheManager.loadProperties(tossCacheProperties.cache, "toss.cache")
         dsl.forEach { cacheManager.resources(it) }
+        cacheManager.loadProperties(tossCacheProperties.cache, "toss.cache")
     }
 
     @Bean
