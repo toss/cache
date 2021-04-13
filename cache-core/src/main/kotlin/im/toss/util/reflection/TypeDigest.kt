@@ -47,11 +47,11 @@ class TypeDigest(
     fun getSpecification(type: Type?, appendable: Appendable = StringBuilder()): Appendable {
         val typeInfo = getOrAdd(type)
         return appendable.apply {
-            appendln("[DEFINITION]")
+            appendLine("[DEFINITION]")
             typeInfo.write(appendable).appendln()
-            appendln("[ENVIRONMENTS]")
-            appendln(environmentsValue)
-            appendln("[DEPENDENCIES]")
+            appendLine("[ENVIRONMENTS]")
+            appendLine(environmentsValue)
+            appendLine("[DEPENDENCIES]")
             getDependencies(typeInfo.type)
                 .sortedBy { it }
                 .forEach {
@@ -286,7 +286,7 @@ data class ClassInfo(
     }.toSet()
 
     override fun write(appendable: Appendable): Appendable = appendable.apply {
-        appendln("class $type: $superType^${modifiers.toI62().trimStart('0')} {")
+        appendLine("class $type: $superType^${modifiers.toI62().trimStart('0')} {")
         fields.forEach { field ->
             field.write(appendable)
             appendable.appendln()
