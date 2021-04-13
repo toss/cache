@@ -37,6 +37,7 @@ dependencies {
     implementation("io.lettuce:lettuce-core:5.2.1.RELEASE")
     implementation("io.micrometer:micrometer-core:1.1.9")
     implementation("com.esotericsoftware:kryo:4.0.2")
+    implementation("com.esotericsoftware.kryo:kryo5:5.0.4")
     implementation("commons-io:commons-io:2.6")
 
     implementation("com.github.toss:tuid:v0.2.1")

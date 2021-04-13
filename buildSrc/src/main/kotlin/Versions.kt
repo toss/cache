@@ -1,4 +1,4 @@
 object Versions {
-    const val kotlinVersion = "1.3.61"
-    const val kotlinCoroutinesVersion = "1.3.2"
+    const val kotlinVersion = "1.4.30"
+    const val kotlinCoroutinesVersion = "1.4.2"
 }
