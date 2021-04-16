@@ -32,7 +32,7 @@ fun CacheFailurePolicy.handle(message: String, e: Throwable) {
     if (this == CacheFailurePolicy.FallbackToOrigin) {
         logger.warn("[SKIPPED] $message", e)
     } else {
-        logger.warn("[FAILURE] message", e)
+        logger.warn("[FAILURE] $message", e)
         if (e is TimeoutCancellationException) {
             throw e
         } else {
