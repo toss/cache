@@ -9,11 +9,15 @@ import im.toss.util.cache.metrics.metrics
 import im.toss.util.cache.resources.InMemoryCacheResources
 import im.toss.util.data.serializer.ByteArraySerializer
 import im.toss.util.properties.InheritableProperties
+import im.toss.util.thread.newThreadPoolExecutor
 import io.lettuce.core.cluster.RedisClusterClient
 import io.micrometer.core.instrument.MeterRegistry
 import io.micrometer.core.instrument.Tag
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.runBlocking
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.coroutines.CoroutineContext
 
 typealias CacheResourcesDsl = CacheManager.ResourcesDefinition.() -> Unit
 
@@ -41,6 +45,24 @@ class CacheManager(
         return this
     }
 
+    private val isolatedThreadPool = newThreadPoolExecutor(6, "toss-cache")
+    private val isolatedThreadContext = isolatedThreadPool.asCoroutineDispatcher()
+
+    var threadPoolSize: Int
+        get() = isolatedThreadPool.maximumPoolSize
+        set(value) {
+            isolatedThreadPool.maximumPoolSize = value
+            isolatedThreadPool.corePoolSize = value
+        }
+
+    private fun getDispatcher(runWithIsolatedThread: Boolean): CoroutineContext {
+        return if (runWithIsolatedThread) {
+            isolatedThreadContext
+        } else {
+            Dispatchers.Unconfined
+        }
+    }
+
     fun <TKey: Any> keyValueCache(
         namespaceId: String
     ): KeyValueCache<TKey> {
@@ -54,6 +76,7 @@ class CacheManager(
                 lock = resources.lock(namespace.options.run { lockTimeout.seconds }),
                 repository = resources.keyFieldValueRepository(),
                 serializer = getSerializer(namespace.serializerId),
+                context = getDispatcher(namespace.options.runWithIsolatedThread),
                 options = namespace.options,
                 metrics = getMetrics(namespaceId)
             )
@@ -74,6 +97,7 @@ class CacheManager(
                 lock = resources.lock(namespace.options.run { lockTimeout.seconds }),
                 repository = resources.keyFieldValueRepository(),
                 serializer = getSerializer(serializerId),
+                context = getDispatcher(namespace.options.runWithIsolatedThread),
                 options = namespace.options,
                 metrics = getMetrics(namespaceId)
             )
@@ -93,6 +117,7 @@ class CacheManager(
                 lock = resources.lock(namespace.options.run { lockTimeout.seconds }),
                 repository = resources.keyFieldValueRepository(),
                 serializer = getSerializer(namespace.serializerId),
+                context = getDispatcher(namespace.options.runWithIsolatedThread),
                 options = namespace.options,
                 metrics = getMetrics(namespaceId)
             )
@@ -113,6 +138,7 @@ class CacheManager(
                 lock = resources.lock(namespace.options.run { lockTimeout.seconds }),
                 repository = resources.keyFieldValueRepository(),
                 serializer = getSerializer(serializerId),
+                context = getDispatcher(namespace.options.runWithIsolatedThread),
                 options = namespace.options,
                 metrics = getMetrics(namespaceId)
             )

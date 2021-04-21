@@ -6,27 +6,48 @@ import im.toss.util.concurrent.lock.MutexLock
 import im.toss.util.coroutine.runWithTimeout
 import im.toss.util.data.serializer.StringSerializer
 import im.toss.util.repository.KeyFieldValueRepository
-import io.mockk.*
+import im.toss.util.thread.newThreadPoolExecutor
+import im.toss.util.time.NanoClock
+import io.mockk.coEvery
+import io.mockk.coVerify
+import io.mockk.mockk
+import io.mockk.slot
 import kotlinx.coroutines.*
+import kotlinx.coroutines.reactive.awaitSingle
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.data.Offset
 import org.junit.jupiter.api.DynamicTest
+import org.junit.jupiter.api.DynamicTest.dynamicTest
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestFactory
-import org.junit.jupiter.api.DynamicTest.dynamicTest
 import org.junit.jupiter.api.assertThrows
+import reactor.core.publisher.Mono
+import reactor.core.scheduler.Schedulers
+import java.time.Duration
+import java.time.LocalDateTime
 import java.time.ZonedDateTime
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import kotlin.coroutines.CoroutineContext
 import kotlin.system.measureTimeMillis
 
 class MultiFieldCacheTest {
-    private fun testCache(repository: KeyFieldValueRepository? = null, version: String = "0001", ttl:Long = 100L, coldTime: Long = 0L, applyTtlIfHit: Boolean = true, mutexLock: MutexLock = LocalMutexLock(5000), failurePolicy: CacheFailurePolicy = CacheFailurePolicy.ThrowException) = MultiFieldCacheImpl<String>(
+    private fun testCache(
+        repository: KeyFieldValueRepository? = null,
+        version: String = "0001",
+        ttl: Long = 100L,
+        coldTime: Long = 0L,
+        applyTtlIfHit: Boolean = true,
+        context: CoroutineContext? = null,
+        mutexLock: MutexLock = LocalMutexLock(5000),
+        failurePolicy: CacheFailurePolicy = CacheFailurePolicy.ThrowException
+    ) = MultiFieldCacheImpl<String>(
         name = "dict_cache",
         keyFunction = Cache.KeyFunction { name, key -> "$name:{$key}" },
         lock = mutexLock,
         repository = repository ?: TestKeyFieldValueRepository(),
         serializer = StringSerializer,
+        context = context,
         options = cacheOptions(
             version = version,
             ttl = ttl,
@@ -69,7 +90,7 @@ class MultiFieldCacheTest {
     @TestFactory
     fun `Cache의 TTL에 도래하기전 hit되면, TTL이 연장된다`(): List<DynamicTest> {
         data class Given(
-            val ttl: Long, val hitTime:Long, val delayTime: Long, val value: String, val expected: String?
+            val ttl: Long, val hitTime: Long, val delayTime: Long, val value: String, val expected: String?
         )
         return listOf(
             Given(ttl = 100, hitTime = 50, delayTime = 10, value = "value", expected = "value"),
@@ -136,7 +157,13 @@ class MultiFieldCacheTest {
             val repository = TestKeyFieldValueRepository()
             val cacheCount = 10
             (1..cacheCount).forEach { cacheVersion ->
-                val caches = (1..cacheCount).associateWith { version -> testCache(repository = repository, version = "$version", ttl = 1000) }
+                val caches = (1..cacheCount).associateWith { version ->
+                    testCache(
+                        repository = repository,
+                        version = "$version",
+                        ttl = 1000
+                    )
+                }
 
                 caches.forEach { (version, cache) -> cache.getOrLoad("key", "field") { "value:$version" } }
                 (caches[cacheVersion] ?: error("")).evict("key")
@@ -167,14 +194,42 @@ class MultiFieldCacheTest {
     @TestFactory
     fun `evict이후 설정된 coldtime동안 cache에 적재 되지 않는다`(): List<DynamicTest> {
         data class Given(
-            val ttl: Long, val coldTime:Long, val delayTime: Long,
+            val ttl: Long, val coldTime: Long, val delayTime: Long,
             val initValue: String, val updateValue: String, val expected: String?
         )
         return listOf(
-            Given(ttl = 200, coldTime = 100, delayTime = 20, initValue = "value", updateValue = "updated", expected = null),
-            Given(ttl = 200, coldTime = 200, delayTime = 150, initValue = "value", updateValue = "updated", expected = null),
-            Given(ttl = 200, coldTime = 100, delayTime = 120, initValue = "value", updateValue = "updated", expected = "updated"),
-            Given(ttl = 200, coldTime = 200, delayTime = 300, initValue = "value", updateValue = "updated", expected = "updated")
+            Given(
+                ttl = 200,
+                coldTime = 100,
+                delayTime = 20,
+                initValue = "value",
+                updateValue = "updated",
+                expected = null
+            ),
+            Given(
+                ttl = 200,
+                coldTime = 200,
+                delayTime = 150,
+                initValue = "value",
+                updateValue = "updated",
+                expected = null
+            ),
+            Given(
+                ttl = 200,
+                coldTime = 100,
+                delayTime = 120,
+                initValue = "value",
+                updateValue = "updated",
+                expected = "updated"
+            ),
+            Given(
+                ttl = 200,
+                coldTime = 200,
+                delayTime = 300,
+                initValue = "value",
+                updateValue = "updated",
+                expected = "updated"
+            )
         )
             .map { given ->
                 dynamicTest("coldTime이 ${given.coldTime}ms일때, evict하고 ${given.delayTime}ms 이후에 ${given.updateValue} 값을 적재하면, ${given.expected}이 된다.") {
@@ -200,8 +255,9 @@ class MultiFieldCacheTest {
                 }
             }
     }
+
     abstract class DataSource {
-        abstract suspend fun get(key: String, field:String, value: String): String
+        abstract suspend fun get(key: String, field: String, value: String): String
     }
 
     @Test
@@ -766,7 +822,8 @@ class MultiFieldCacheTest {
     @Test
     fun `낙관적 락으로 캐시에 값을 기록한다`() {
         runBlocking {
-            val key = "key"; val field = "field"
+            val key = "key";
+            val field = "field"
             val cache = testCache(ttl = 10000)
             cache.load(key, field) { "VER0" }
 
@@ -781,7 +838,8 @@ class MultiFieldCacheTest {
     @Test
     fun `낙관적 락 중 키가 evict되면 기록하지 않는다`() {
         runBlocking {
-            val key = "key"; val field = "field"
+            val key = "key";
+            val field = "field"
             val cache = testCache(ttl = 10000)
             cache.load(key, field) { "VER0" }
 
@@ -806,7 +864,8 @@ class MultiFieldCacheTest {
         */
 
         runBlocking {
-            val key = "key"; val field = "field"
+            val key = "key";
+            val field = "field"
             val cache = testCache(ttl = 10000)
             cache.load(key, field) { "VER0" }
             cache.get<String>(key, field) equalsTo "VER0"
@@ -852,7 +911,8 @@ class MultiFieldCacheTest {
         */
 
         runBlocking {
-            val key = "key"; val field = "field"
+            val key = "key";
+            val field = "field"
             val cache = testCache(ttl = 10000)
             cache.load(key, field) { "VER0" }
             cache.get<String>(key, field) equalsTo "VER0"
@@ -900,7 +960,8 @@ class MultiFieldCacheTest {
         */
 
         runBlocking {
-            val key = "key"; val field = "field"
+            val key = "key";
+            val field = "field"
             val cache = testCache(ttl = 10000)
             cache.load(key, field) { "VER0" }
             cache.get<String>(key, field) equalsTo "VER0"
@@ -952,6 +1013,81 @@ class MultiFieldCacheTest {
             cache.hitCount equalsTo 3L
             cache.putCount equalsTo 2L
             cache.evictionCount equalsTo 1L
+        }
+    }
+
+
+    @TestFactory
+    fun `cache의 내부 로직이 지정한 스레드에서 수행된다`(): List<DynamicTest> {
+        fun shouldThread(namePrefix: String) {
+            assertThat(Thread.currentThread().name).startsWith(namePrefix)
+        }
+
+        return listOf(
+            true to "cache",
+            false to "main"
+        ).map { (isolated, expected) ->
+            val repositoryContext = newThreadPoolExecutor(2, "repo").asCoroutineDispatcher()
+            val cacheContext = newThreadPoolExecutor(2, "cache").asCoroutineDispatcher()
+            dynamicTest("isolated가 ${isolated}이면 $expected 스레드에서 실행한다") {
+                val logBuffer = StringBuilder()
+                runBlocking {
+                    (1..3).forEach { i ->
+                        val startTime = LocalDateTime.now(NanoClock.DEFAULT)
+                        fun log(msg: String) {
+                            val duration = Duration.between(startTime, LocalDateTime.now(NanoClock.DEFAULT)).toNanos()
+                            val output = String.format(
+                                "%-20s | %.6fs | %s",
+                                Thread.currentThread().name,
+                                duration / 1_000_000_000.0,
+                                msg
+                            )
+                            logBuffer.appendLine(output)
+//                            println(output)
+                        }
+
+                        suspend fun fetch(value: String): String {
+                            return Mono.fromCallable {
+                                log("$i: in fetch")
+                                shouldThread("parallel")
+                                value
+                            }
+                                .publishOn(Schedulers.parallel())
+                                .awaitSingle()
+                        }
+
+                        val cache = testCache(
+                            ttl = 1000,
+                            context = if (isolated) cacheContext else null,
+                            repository = TestKeyFieldValueRepository(
+                                repositoryContext,
+                                onGet = { key, field, result ->
+                                    log("$i: onGet(key=$key, field=$field) -> $result")
+                                    shouldThread("repo")
+                                },
+                                onSet = { key, field, value, ttl, unit ->
+                                    log("$i: onSet(key=$key, field=$field, value=$value, ttl=$ttl, unit=$unit)")
+                                    shouldThread("repo")
+                                }
+                            ))
+                        log("---------------------------------")
+                        log("$i: init")
+                        shouldThread("main")
+                        cache.getOrLoad("key", "field") {
+                            log("$i: before load")
+                            shouldThread(expected)
+                            fetch("100").apply {
+                                log("$i: after load")
+                                shouldThread(expected)
+                            }
+                        }
+                        log("$i: final")
+                        shouldThread("main")
+                    }
+                }
+
+                println(logBuffer.toString())
+            }
         }
     }
 }

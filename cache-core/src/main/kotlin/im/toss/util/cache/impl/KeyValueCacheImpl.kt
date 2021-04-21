@@ -10,6 +10,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import java.lang.reflect.Type
+import kotlin.coroutines.CoroutineContext
 
 data class KeyValueCacheImpl<TKey: Any>(
     override val name: String,
@@ -17,10 +18,11 @@ data class KeyValueCacheImpl<TKey: Any>(
     val lock: MutexLock,
     val repository: KeyFieldValueRepository,
     val serializer: Serializer,
+    val context: CoroutineContext?,
     override val options: CacheOptions,
     private val metrics: CacheMetrics = CacheMetrics(name)
 ) : Cache, CacheMeter by metrics, KeyValueCache<TKey>() {
-    val cache by lazy { MultiFieldCacheImpl<TKey>(name, keyFunction, lock, repository, serializer, options, metrics, "KeyValueCache") }
+    val cache by lazy { MultiFieldCacheImpl<TKey>(name, keyFunction, lock, repository, serializer, context, options, metrics, "KeyValueCache") }
     val field = ".value"
 
     override suspend fun evict(key: TKey) = cache.evict(key)
