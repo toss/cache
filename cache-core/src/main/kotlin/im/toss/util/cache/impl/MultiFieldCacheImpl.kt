@@ -10,10 +10,12 @@ import im.toss.util.data.serializer.Serializer
 import im.toss.util.reflection.TypeDigest
 import im.toss.util.repository.KeyFieldValueRepository
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.withContext
 import mu.KotlinLogging
 import java.lang.reflect.Type
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.coroutines.CoroutineContext
 
 private val logger = KotlinLogging.logger {}
 
@@ -23,6 +25,7 @@ data class MultiFieldCacheImpl<TKey: Any>(
     val lock: MutexLock,
     val repository: KeyFieldValueRepository,
     val serializer: Serializer,
+    val context: CoroutineContext?,
     override val options: CacheOptions,
     private val metrics: CacheMetrics = CacheMetrics(name),
     private val typeName: String = "MultiFieldCache"
@@ -35,26 +38,40 @@ data class MultiFieldCacheImpl<TKey: Any>(
 
     private val keys = Keys<TKey>(name, keyFunction, options, typeDigest)
 
+    private suspend fun <T> runWithContext(context: CoroutineContext?, block: suspend () -> T): T {
+        return if (context == null) {
+            block()
+        } else {
+            withContext(context) {
+                block()
+            }
+        }
+    }
+
     override suspend fun evict(key: TKey) {
-        metrics.incrementEvictCount()
-        setColdTime(key)
-        setModified(key)
-        repository.delete(keys.key(key))
+        runWithContext(context) {
+            metrics.incrementEvictCount()
+            setColdTime(key)
+            setModified(key)
+            repository.delete(keys.key(key))
+        }
     }
 
     override suspend fun <T: Any> load(key: TKey, field: String, type: Type?, fetch: (suspend () -> T)) {
-        runWithTimeout(options.operationTimeout.toMillis()) {
-            if (options.cacheMode == CacheMode.EVICTION_ONLY) {
-                evict(key)
-            } else {
-                try {
-                    runOrRetry {
-                        loadToCache(key, field, type, fetch)
+        runWithContext(context) {
+            runWithTimeout(options.operationTimeout.toMillis()) {
+                if (options.cacheMode == CacheMode.EVICTION_ONLY) {
+                    evict(key)
+                } else {
+                    try {
+                        runOrRetry {
+                            loadToCache(key, field, type, fetch)
+                        }
+                    } catch (e: Throwable) {
+                        options.cacheFailurePolicy.handle(
+                            "$typeName.load(): exception occured on load: cache=$name, key=$key, field=$field", e
+                        )
                     }
-                } catch (e: Throwable) {
-                    options.cacheFailurePolicy.handle(
-                        "$typeName.load(): exception occured on load: cache=$name, key=$key, field=$field", e
-                    )
                 }
             }
         }
@@ -148,47 +165,13 @@ data class MultiFieldCacheImpl<TKey: Any>(
             return null
         }
 
-        try {
-            return runWithTimeout(options.operationTimeout.toMillis()) {
-                when (val cached = readFromCache<T>(key, field, type)) {
-                    null -> {
-                        metrics.incrementMissCount()
-                        null
-                    }
-                    else -> {
-                        metrics.incrementHitCount()
-                        if (options.applyTtlIfHit && options.ttl.toMillis() > 0L) {
-                            repository.expire(keys.key(key), options.ttl.toMillis(), TimeUnit.MILLISECONDS)
-                        }
-                        cached
-                    }
-                }
-            }
-        } catch (e: TimeoutCancellationException) {
-            options.cacheFailurePolicy.handle("$typeName.get(): timeout occured on read from cache: cache=$name, key=$key, field=$field", e)
-        } catch (e: Throwable) {
-            options.cacheFailurePolicy.handle("$typeName.get(): exception occured on read from cache: cache=$name, key=$key, field=$field", e)
-        }
-        metrics.incrementMissCount()
-        return null
-    }
-
-    override suspend fun <T: Any> getOrLoad(key: TKey, field: String, type: Type?, fetch: (suspend () -> T)): T {
-        if (options.cacheMode == CacheMode.EVICTION_ONLY) {
-            metrics.incrementMissCount()
-            return fetch()
-        }
-
-        try {
-            return runWithTimeout(options.operationTimeout.toMillis()) {
-                runOrRetry {
+        return runWithContext(context) {
+            try {
+                return@runWithContext runWithTimeout(options.operationTimeout.toMillis()) {
                     when (val cached = readFromCache<T>(key, field, type)) {
-                        null -> if (isColdTime(key)) {
+                        null -> {
                             metrics.incrementMissCount()
-                            fetch()
-                        } else loadToCache(key, field, type) {
-                            metrics.incrementMissCount()
-                            fetch()
+                            null
                         }
                         else -> {
                             metrics.incrementHitCount()
@@ -199,51 +182,109 @@ data class MultiFieldCacheImpl<TKey: Any>(
                         }
                     }
                 }
+            } catch (e: TimeoutCancellationException) {
+                options.cacheFailurePolicy.handle(
+                    "$typeName.get(): timeout occured on read from cache: cache=$name, key=$key, field=$field",
+                    e
+                )
+            } catch (e: Throwable) {
+                options.cacheFailurePolicy.handle(
+                    "$typeName.get(): exception occured on read from cache: cache=$name, key=$key, field=$field",
+                    e
+                )
             }
-        } catch (e: TimeoutCancellationException) {
-            options.cacheFailurePolicy.handle("$typeName.getOrLoad(): timeout occured on read from cache: cache=$name, key=$key, field=$field", e)
-        } catch (e: Throwable) {
-            options.cacheFailurePolicy.handle("$typeName.getOrLoad(): exception occured on read from cache: cache=$name, key=$key, field=$field", e)
+            metrics.incrementMissCount()
+            null
         }
-        metrics.incrementMissCount()
-        return fetch()
     }
 
-    override suspend fun <T: Any> getOrLockForLoad(key: TKey, field: String, type: Type?): ResultGetOrLockForLoad<T> {
-        if (options.cacheMode == CacheMode.EVICTION_ONLY) {
-            metrics.incrementMissCount()
-            return ResultGetOrLockForLoad()
-        }
+    override suspend fun <T: Any> getOrLoad(key: TKey, field: String, type: Type?, fetch: (suspend () -> T)): T {
+        return runWithContext(context) {
+            if (options.cacheMode == CacheMode.EVICTION_ONLY) {
+                metrics.incrementMissCount()
+                return@runWithContext fetch()
+            }
 
-        try {
-            return runWithTimeout(options.operationTimeout.toMillis()) {
-                runOrRetry {
-                    when (val cached = readFromCache<T>(key, field, type)) {
-                        null -> if (isColdTime(key)) {
-                            metrics.incrementMissCount()
-                            ResultGetOrLockForLoad()
-                        } else {
-                            metrics.incrementMissCount()
-                            ResultGetOrLockForLoad(loader = lockForLoad(key, field, type))
-                        }
-                        else -> {
-                            metrics.incrementHitCount()
-                            if (options.applyTtlIfHit && options.ttl.toMillis() > 0L) {
-                                repository.expire(keys.key(key), options.ttl.toMillis(), TimeUnit.MILLISECONDS)
+            try {
+                return@runWithContext runWithTimeout(options.operationTimeout.toMillis()) {
+                    runOrRetry {
+                        when (val cached = readFromCache<T>(key, field, type)) {
+                            null -> if (isColdTime(key)) {
+                                metrics.incrementMissCount()
+                                fetch()
+                            } else loadToCache(key, field, type) {
+                                metrics.incrementMissCount()
+                                fetch()
                             }
-                            ResultGetOrLockForLoad(cached)
+                            else -> {
+                                metrics.incrementHitCount()
+                                if (options.applyTtlIfHit && options.ttl.toMillis() > 0L) {
+                                    repository.expire(keys.key(key), options.ttl.toMillis(), TimeUnit.MILLISECONDS)
+                                }
+                                cached
+                            }
                         }
                     }
                 }
+            } catch (e: TimeoutCancellationException) {
+                options.cacheFailurePolicy.handle(
+                    "$typeName.getOrLoad(): timeout occured on read from cache: cache=$name, key=$key, field=$field",
+                    e
+                )
+            } catch (e: Throwable) {
+                options.cacheFailurePolicy.handle(
+                    "$typeName.getOrLoad(): exception occured on read from cache: cache=$name, key=$key, field=$field",
+                    e
+                )
             }
-        } catch (e: TimeoutCancellationException) {
-            options.cacheFailurePolicy.handle("$typeName.getOrLockForLoad(): timeout occured on read from cache: cache=$name, key=$key, field=$field", e)
-        } catch (e: Throwable) {
-            options.cacheFailurePolicy.handle("$typeName.getOrLockForLoad(): exception occured on read from cache: cache=$name, key=$key, field=$field", e)
+            metrics.incrementMissCount()
+            fetch()
         }
-        metrics.incrementMissCount()
+    }
 
-        return ResultGetOrLockForLoad()
+    override suspend fun <T: Any> getOrLockForLoad(key: TKey, field: String, type: Type?): ResultGetOrLockForLoad<T> {
+        return runWithContext(context) {
+            if (options.cacheMode == CacheMode.EVICTION_ONLY) {
+                metrics.incrementMissCount()
+                return@runWithContext ResultGetOrLockForLoad()
+            }
+
+            try {
+                return@runWithContext runWithTimeout(options.operationTimeout.toMillis()) {
+                    runOrRetry {
+                        when (val cached = readFromCache<T>(key, field, type)) {
+                            null -> if (isColdTime(key)) {
+                                metrics.incrementMissCount()
+                                ResultGetOrLockForLoad()
+                            } else {
+                                metrics.incrementMissCount()
+                                ResultGetOrLockForLoad(loader = lockForLoad(key, field, type))
+                            }
+                            else -> {
+                                metrics.incrementHitCount()
+                                if (options.applyTtlIfHit && options.ttl.toMillis() > 0L) {
+                                    repository.expire(keys.key(key), options.ttl.toMillis(), TimeUnit.MILLISECONDS)
+                                }
+                                ResultGetOrLockForLoad(cached)
+                            }
+                        }
+                    }
+                }
+            } catch (e: TimeoutCancellationException) {
+                options.cacheFailurePolicy.handle(
+                    "$typeName.getOrLockForLoad(): timeout occured on read from cache: cache=$name, key=$key, field=$field",
+                    e
+                )
+            } catch (e: Throwable) {
+                options.cacheFailurePolicy.handle(
+                    "$typeName.getOrLockForLoad(): exception occured on read from cache: cache=$name, key=$key, field=$field",
+                    e
+                )
+            }
+            metrics.incrementMissCount()
+
+            ResultGetOrLockForLoad()
+        }
     }
 
 

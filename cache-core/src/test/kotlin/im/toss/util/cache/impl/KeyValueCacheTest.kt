@@ -20,6 +20,7 @@ import org.junit.jupiter.api.TestFactory
 import org.junit.jupiter.api.assertThrows
 import java.time.ZonedDateTime
 import java.util.concurrent.TimeUnit
+import kotlin.coroutines.CoroutineContext
 import kotlin.system.measureTimeMillis
 
 class KeyValueCacheTest {
@@ -29,6 +30,7 @@ class KeyValueCacheTest {
         ttl: Long = 100L,
         coldTime: Long = 0L,
         applyTtlIfHit: Boolean = true,
+        context: CoroutineContext? = null,
         mutexLock: MutexLock = LocalMutexLock(5000),
         failurePolicy: CacheFailurePolicy = CacheFailurePolicy.ThrowException
     ) = KeyValueCacheImpl<String>(
@@ -37,6 +39,7 @@ class KeyValueCacheTest {
         lock = mutexLock,
         repository = repository ?: TestKeyFieldValueRepository(),
         serializer = StringSerializer,
+        context = context,
         options = cacheOptions(
             version = version,
             ttl = ttl,
