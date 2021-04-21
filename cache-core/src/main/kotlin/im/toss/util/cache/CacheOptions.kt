@@ -30,7 +30,10 @@ data class CacheOptions(
     var cacheFailurePolicy: CacheFailurePolicy = CacheFailurePolicy.ThrowException,
 
     @field:JsonProperty("isolation-by-type")
-    var isolationByType: Boolean = false
+    var isolationByType: Boolean = false,
+
+    @field:JsonProperty("run-with-isolated-thread")
+    var runWithIsolatedThread: Boolean = false,
 )
 
 fun cacheOptions(

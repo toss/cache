@@ -25,6 +25,7 @@ class BlockingMultiFieldCacheTest {
         lock = LocalMutexLock(5000),
         repository = repository ?: TestKeyFieldValueRepository(),
         serializer = StringSerializer,
+        context = null,
         options = cacheOptions(
             ttl = ttl,
             ttlTimeUnit = TimeUnit.MILLISECONDS,
