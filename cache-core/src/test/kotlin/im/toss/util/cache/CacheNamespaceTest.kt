@@ -28,7 +28,7 @@ internal class CacheNamespaceTest {
             "namespace.second.resource-id" to "default2",
             "namespace.second.preset" to "default",
             "namespace.second.options.ttl" to "PT10S",
-            "namespace.second.options.run-with-isolated-thread" to "true"
+            "namespace.second.options.run-with-isolated-context" to "true"
         )
         val source = InheritableProperties(properties, "toss.cache")
         source.instantiates<CacheNamespace>(
@@ -58,7 +58,7 @@ internal class CacheNamespaceTest {
                     applyTtlIfHit = true,
                     coldTime = Duration.ofSeconds(1L),
                     cacheFailurePolicy = CacheFailurePolicy.FallbackToOrigin,
-                    runWithIsolatedThread = true
+                    runWithIsolatedContext = true
                 )
             )
         )

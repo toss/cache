@@ -32,8 +32,12 @@ data class CacheOptions(
     @field:JsonProperty("isolation-by-type")
     var isolationByType: Boolean = false,
 
+    @Deprecated("changed to run-with-isolated-context, remove after 0.6.0")
     @field:JsonProperty("run-with-isolated-thread")
     var runWithIsolatedThread: Boolean = false,
+
+    @field:JsonProperty("run-with-isolated-context")
+    var runWithIsolatedContext: Boolean = false,
 )
 
 fun cacheOptions(
