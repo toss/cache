@@ -33,6 +33,7 @@ data class KeyValueCacheImpl<TKey: Any>(
     @Throws(MutexLock.FailedAcquireException::class)
     override suspend fun <T : Any> lockForLoad(key: TKey, type: Type?, timeout: Long): CacheValueLoader<T> = cache.lockForLoad(key, field, type, timeout)
     override suspend fun <T : Any> getOrLockForLoad(key: TKey, type: Type?): ResultGetOrLockForLoad<T> = cache.getOrLockForLoad(key, field, type)
+    override suspend fun <T : Any> pessimisticLockForLoad(key: TKey, type: Type?, timeout: Long): CacheValueLoader<T> = cache.pessimisticLockForLoad(key, field, type, timeout)
     override suspend fun <T : Any> optimisticLockForLoad(key: TKey, type: Type?): CacheValueLoader<T> = cache.optimisticLockForLoad(key, field, type)
 
     override suspend fun <T : Any> multiGet(keys: Set<TKey>, type: Type?): Map<TKey, T?> = coroutineScope {
