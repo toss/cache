@@ -16,11 +16,17 @@ abstract class KeyValueCache<TKey: Any> {
     @Throws(MutexLock.FailedAcquireException::class)
     abstract suspend fun <T: Any> lockForLoad(key: TKey, type: Type?, timeout: Long = -1): CacheValueLoader<T>
     abstract suspend fun <T: Any> getOrLockForLoad(key: TKey, type: Type?): ResultGetOrLockForLoad<T>
+    @Throws(NotSupportPessimisticLockException::class)
+    abstract suspend fun <T : Any> pessimisticLockForLoad(key: TKey, type: Type?, timeout: Long = -1): CacheValueLoader<T>
+    @Throws(NotSupportOptimisticLockException::class)
     abstract suspend fun <T: Any> optimisticLockForLoad(key: TKey, type: Type?): CacheValueLoader<T>
 
     abstract suspend fun <T: Any> multiGet(keys: Set<TKey>, type: Type?): Map<TKey, T?>
     abstract suspend fun <T: Any> multiGetOrLoad(keys: Set<TKey>, type: Type?, fetch: (suspend (Set<TKey>) -> Map<TKey, T>)): Map<TKey, T>
 
+    @Throws(NotSupportPessimisticLockException::class)
+    suspend inline fun <reified T: Any> pessimisticLockForLoad(key: TKey, timeout: Long = -1): CacheValueLoader<T> = pessimisticLockForLoad(key, getType<T>(), timeout)
+    @Throws(NotSupportOptimisticLockException::class)
     suspend inline fun <reified T: Any> optimisticLockForLoad(key: TKey): CacheValueLoader<T> = optimisticLockForLoad(key, getType<T>())
     @Throws(MutexLock.FailedAcquireException::class)
     suspend inline fun <reified T: Any> lockForLoad(key: TKey, timeout: Long = -1): CacheValueLoader<T> = lockForLoad(key, getType<T>(), timeout)

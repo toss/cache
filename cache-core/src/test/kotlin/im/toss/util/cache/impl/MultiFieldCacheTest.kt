@@ -40,7 +40,9 @@ class MultiFieldCacheTest {
         applyTtlIfHit: Boolean = true,
         context: CoroutineContext? = null,
         mutexLock: MutexLock = LocalMutexLock(5000),
-        failurePolicy: CacheFailurePolicy = CacheFailurePolicy.ThrowException
+        failurePolicy: CacheFailurePolicy = CacheFailurePolicy.ThrowException,
+        pessimisticLock: Boolean = true,
+        optimisticLock: Boolean = true,
     ) = MultiFieldCacheImpl<String>(
         name = "dict_cache",
         keyFunction = Cache.KeyFunction { name, key -> "$name:{$key}" },
@@ -56,7 +58,9 @@ class MultiFieldCacheTest {
             coldTimeUnit = TimeUnit.MILLISECONDS,
             applyTtlIfHit = applyTtlIfHit,
             cacheFailurePolicy = failurePolicy,
-            lockTimeout = 10
+            lockTimeout = 10,
+            enablePessimisticLock = pessimisticLock,
+            enableOptimisticLock = optimisticLock,
         )
     )
 
@@ -820,9 +824,59 @@ class MultiFieldCacheTest {
     }
 
     @Test
+    fun `락 옵션을 끄면, 락 실행 시 예외가 발생된다`() {
+        val key = "key"
+        val field = "field"
+
+        assertThrows<NotSupportOptimisticLockException> {
+            runBlocking {
+                val cache = testCache(ttl = 10000, optimisticLock = false)
+                cache.optimisticLockForLoad<String>(key, field)
+            }
+        }
+
+        assertThrows<NotSupportPessimisticLockException> {
+            runBlocking {
+                val cache = testCache(ttl = 10000, pessimisticLock = false)
+                cache.pessimisticLockForLoad<String>(key, field)
+            }
+        }
+    }
+
+    @Test
+    fun `pessimistic lock 옵션을 끄면, lockForLoad시 optimistic lock으로 동작한다`() {
+        val key = "key"
+        val field = "field"
+
+        runBlocking {
+            val cache = testCache(ttl = 10000, pessimisticLock = false)
+            val lock = cache.lockForLoad<String>(key, field)
+            cache.load(key, field) { "VER0" }
+            cache.get<String>(key, field) equalsTo "VER0"
+            lock.load("VER1")
+            cache.get<String>(key, field) equalsTo null
+        }
+    }
+
+    @Test
+    fun `모든 lock 옵션을 끄면, lockForLoad를 사용할 수 있지만, lock이 적용되지 않는다`() {
+        val key = "key"
+        val field = "field"
+
+        runBlocking {
+            val cache = testCache(ttl = 10000, pessimisticLock = false, optimisticLock = false)
+            val lock = cache.lockForLoad<String>(key, field)
+            cache.load(key, field) { "VER0" }
+            cache.get<String>(key, field) equalsTo "VER0"
+            lock.load("VER1")
+            cache.get<String>(key, field) equalsTo "VER1"
+        }
+    }
+
+    @Test
     fun `낙관적 락으로 캐시에 값을 기록한다`() {
         runBlocking {
-            val key = "key";
+            val key = "key"
             val field = "field"
             val cache = testCache(ttl = 10000)
             cache.load(key, field) { "VER0" }

@@ -90,7 +90,23 @@ data class MultiFieldCacheImpl<TKey: Any>(
 
 
     @Throws(MutexLock.FailedAcquireException::class)
-    override suspend fun <T:Any> lockForLoad(key: TKey, field: String, type: Type?, timeout: Long): CacheValueLoader<T> {
+    override suspend fun <T: Any> lockForLoad(
+        key: TKey,
+        field: String,
+        type: Type?,
+        timeout: Long
+    ): CacheValueLoader<T> {
+        return if (options.enablePessimisticLock) {
+            pessimisticLockForLoad(key, field, type, timeout)
+        } else {
+            basicLockForLoad(key, field, type)
+        }
+    }
+
+    override suspend fun <T: Any> pessimisticLockForLoad(key: TKey, field: String, type: Type?, timeout: Long): CacheValueLoader<T> {
+        if (!options.enablePessimisticLock)
+            throw NotSupportPessimisticLockException()
+
         val lockKey = keys.fetchKey(key, field)
         if (!lock.acquire(lockKey, timeout)) {
             throw MutexLock.FailedAcquireException
@@ -98,9 +114,18 @@ data class MultiFieldCacheImpl<TKey: Any>(
         return PessimisticKeyFieldCacheValueLoader(key, field, type, acquireNewVersion(key, field), lockKey)
     }
 
-    override suspend fun <T:Any> optimisticLockForLoad(key: TKey, field: String, type: Type?): CacheValueLoader<T> {
-        return OptimisticKeyFieldCacheValueLoader(key, field, type, acquireNewVersion(key, field))
+
+    override suspend fun <T: Any> optimisticLockForLoad(key: TKey, field: String, type: Type?): CacheValueLoader<T> {
+        if (!options.enableOptimisticLock)
+            throw NotSupportOptimisticLockException()
+
+        return basicLockForLoad(key, field, type)
     }
+
+    private suspend fun <T: Any> basicLockForLoad(key: TKey, field: String, type: Type?): CacheValueLoader<T> {
+        return BasicKeyFieldCacheValueLoader(key, field, type, acquireNewVersion(key, field))
+    }
+
 
     private suspend fun <T:Any> compareAndLoad(key: TKey, field: String, version: Long, type: Type?, value: T): LoadResult<T> {
         return if (compareAndAcquire(key, field, version)) {
@@ -142,7 +167,7 @@ data class MultiFieldCacheImpl<TKey: Any>(
         }
     }
 
-    inner class OptimisticKeyFieldCacheValueLoader<T: Any>(
+    inner class BasicKeyFieldCacheValueLoader<T: Any>(
         val key: TKey,
         val field: String,
         val type: Type?,
@@ -301,7 +326,7 @@ data class MultiFieldCacheImpl<TKey: Any>(
         }
     }
 
-    private class Keys<K: Any>(
+    private class Keys<K : Any>(
         private val name: String,
         private val keyFunction: Cache.KeyFunction,
         val options: CacheOptions,
@@ -315,8 +340,8 @@ data class MultiFieldCacheImpl<TKey: Any>(
         }
 
         fun lock(key: K, postfix: String): String = "${key(key)}|$postfix"
-        fun cold(key:K) = lock(key, "@COLD")
-        fun fetchKey(key:K, field: String) = lock(key, "$field@FETCH")
+        fun cold(key: K) = lock(key, "@COLD")
+        fun fetchKey(key: K, field: String) = lock(key, "$field@FETCH")
         fun optimisticLock(key: K) = lock(key, "@NOTEVICT")
 
     }
@@ -338,6 +363,18 @@ data class MultiFieldCacheImpl<TKey: Any>(
     }
 
     private suspend fun setModified(key: TKey) = repository.delete(keys.optimisticLock(key))
-    private suspend fun acquireNewVersion(key: TKey, field: String) = repository.incrBy(keys.optimisticLock(key), field, 1, options.lockTimeout.toMillis(), TimeUnit.MILLISECONDS)
-    private suspend fun compareAndAcquire(key: TKey, field: String, version: Long) = version == acquireNewVersion(key, field) - 1
+
+    private suspend fun acquireNewVersion(key: TKey, field: String) =
+        if (options.enableOptimisticLock) {
+            repository.incrBy(keys.optimisticLock(key), field, 1, options.lockTimeout.toMillis(), TimeUnit.MILLISECONDS)
+        } else {
+            -1L
+        }
+
+    private suspend fun compareAndAcquire(key: TKey, field: String, version: Long) =
+        if (options.enableOptimisticLock) {
+            version == acquireNewVersion(key, field) - 1
+        } else {
+            true
+        }
 }

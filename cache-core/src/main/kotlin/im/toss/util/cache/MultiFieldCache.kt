@@ -5,6 +5,8 @@ import im.toss.util.concurrent.lock.MutexLock
 import im.toss.util.reflection.getType
 import java.lang.reflect.Type
 
+class NotSupportPessimisticLockException: Exception("check options: enable-pessimistic-lock")
+class NotSupportOptimisticLockException: Exception("check options: enable-optimistic-lock")
 
 abstract class MultiFieldCache<TKey: Any> {
     val blocking by lazy { BlockingMultiFieldCache(this) }
@@ -17,9 +19,17 @@ abstract class MultiFieldCache<TKey: Any> {
     @Throws(MutexLock.FailedAcquireException::class)
     abstract suspend fun <T: Any> lockForLoad(key: TKey, field: String, type: Type?, timeout: Long = -1): CacheValueLoader<T>
     abstract suspend fun <T: Any> getOrLockForLoad(key: TKey, field: String, type: Type?): ResultGetOrLockForLoad<T>
+
+    @Throws(NotSupportPessimisticLockException::class)
+    abstract suspend fun <T: Any> pessimisticLockForLoad(key: TKey, field: String, type: Type?, timeout: Long = -1): CacheValueLoader<T>
+    @Throws(NotSupportOptimisticLockException::class)
     abstract suspend fun <T: Any> optimisticLockForLoad(key: TKey, field: String, type: Type?): CacheValueLoader<T>
 
+    @Throws(NotSupportPessimisticLockException::class)
+    suspend inline fun <reified T: Any> pessimisticLockForLoad(key: TKey, field: String, timeout: Long = -1): CacheValueLoader<T> = pessimisticLockForLoad(key, field, getType<T>(), timeout)
+    @Throws(NotSupportOptimisticLockException::class)
     suspend inline fun <reified T: Any> optimisticLockForLoad(key: TKey, field: String): CacheValueLoader<T> = optimisticLockForLoad(key, field, getType<T>())
+
     @Throws(MutexLock.FailedAcquireException::class)
     suspend inline fun <reified T: Any> lockForLoad(key: TKey, field: String, timeout: Long = -1): CacheValueLoader<T> = lockForLoad(key, field, getType<T>(), timeout)
     suspend inline fun <reified T: Any> getOrLockForLoad(key: TKey, field: String): ResultGetOrLockForLoad<T> = getOrLockForLoad(key, field, getType<T>())
