@@ -14,7 +14,7 @@ abstract class MultiFieldCache<TKey: Any> {
 
     abstract suspend fun evict(key: TKey)
     abstract suspend fun <T: Any> get(key: TKey, field: String, type: Type?): T?
-    abstract suspend fun <T: Any> load(key: TKey, field: String, type: Type?, fetch: (suspend () -> T))
+    abstract suspend fun <T: Any> load(key: TKey, field: String, forceLoad: Boolean = false, type: Type?, fetch: (suspend () -> T))
     abstract suspend fun <T: Any> getOrLoad(key: TKey, field: String, type: Type?, fetch: (suspend () -> T)): T
     @Throws(MutexLock.FailedAcquireException::class)
     abstract suspend fun <T: Any> lockForLoad(key: TKey, field: String, type: Type?, timeout: Long = -1): CacheValueLoader<T>
@@ -35,5 +35,5 @@ abstract class MultiFieldCache<TKey: Any> {
     suspend inline fun <reified T: Any> getOrLockForLoad(key: TKey, field: String): ResultGetOrLockForLoad<T> = getOrLockForLoad(key, field, getType<T>())
     suspend inline fun <reified T: Any> getOrLoad(key: TKey, field: String, noinline fetch: (suspend () -> T)): T = getOrLoad(key, field, getType<T>(), fetch)
     suspend inline fun <reified T: Any> get(key: TKey, field: String): T? = get(key, field, getType<T>())
-    suspend inline fun <reified T: Any> load(key: TKey, field: String, noinline fetch: (suspend () -> T)) = load(key, field, getType<T>(), fetch)
+    suspend inline fun <reified T: Any> load(key: TKey, field: String, forceLoad: Boolean = false, noinline fetch: (suspend () -> T)) = load(key, field, forceLoad, getType<T>(), fetch)
 }

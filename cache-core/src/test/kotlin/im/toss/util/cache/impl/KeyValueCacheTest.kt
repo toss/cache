@@ -416,6 +416,55 @@ class KeyValueCacheTest {
     }
 
     @Test
+    fun `coldTime을 사용하는 경우, multiLoad에 coldTime이 적용된다`() {
+        runBlocking {
+            // given
+            val cache = testCache(ttl = 1000, coldTime = 1000L)
+            cache.getOrLoad("key1") { "preset1" }
+            cache.getOrLoad("key2") { "preset2" }
+
+            // when
+            cache.evict("key1")
+            cache.evict("key2")
+            cache.multiLoad(
+                mapOf(
+                    "key1" to "reloaded1",
+                    "key2" to "reloaded2",
+                )
+            )
+
+            // then
+            cache.get<String>("key1").equalsTo(null)
+            cache.get<String>("key2").equalsTo(null)
+        }
+    }
+
+    @Test
+    fun `coldTime을 사용하는 경우, multiLoad(forceLoad=true)시 강제 로딩된다`() {
+        runBlocking {
+            // given
+            val cache = testCache(ttl = 1000, coldTime = 1000L)
+            cache.getOrLoad("key1") { "preset1" }
+            cache.getOrLoad("key2") { "preset2" }
+
+            // when
+            cache.evict("key1")
+            cache.evict("key2")
+            cache.multiLoad(
+                mapOf(
+                    "key1" to "reloaded1",
+                    "key2" to "reloaded2",
+                ),
+                forceLoad = true
+            )
+
+            // then
+            cache.get<String>("key1").equalsTo("reloaded1")
+            cache.get<String>("key2").equalsTo("reloaded2")
+        }
+    }
+
+    @Test
     fun `evictionOnly 모드일때도 evict이 작동한다`() {
         runBlocking {
             // given

@@ -32,7 +32,7 @@ data class KeyValueCacheImpl<TKey: Any>(
     override suspend fun evict(key: TKey) = cache.evict(key)
 
     override suspend fun <T : Any> get(key: TKey, type: Type?): T? = cache.get(key, field, type)
-    override suspend fun <T : Any> load(key: TKey, type: Type?, fetch: suspend () -> T) = cache.load(key, field, type, fetch)
+    override suspend fun <T : Any> load(key: TKey, forceLoad: Boolean, type: Type?, fetch: suspend () -> T) = cache.load(key, field, forceLoad, type, fetch)
     override suspend fun <T : Any> getOrLoad(key: TKey, type: Type?, fetch: suspend () -> T): T = cache.getOrLoad(key, field, type, fetch)
     @Throws(MutexLock.FailedAcquireException::class)
     override suspend fun <T : Any> lockForLoad(key: TKey, type: Type?, timeout: Long): CacheValueLoader<T> = cache.lockForLoad(key, field, type, timeout)
@@ -65,9 +65,9 @@ data class KeyValueCacheImpl<TKey: Any>(
         }
     }
 
-    override suspend fun <T : Any> multiLoad(keyValues: Map<TKey, T>, type: Type?) {
+    override suspend fun <T : Any> multiLoad(keyValues: Map<TKey, T>, forceLoad: Boolean, type: Type?) {
         keyValues.entries.forEach(options.multiParallelism) {
-            load(it.key, type) { it.value }
+            load(it.key, forceLoad, type) { it.value }
         }
     }
 
@@ -103,7 +103,7 @@ data class KeyValueCacheImpl<TKey: Any>(
             multiGetTo(keys, missedKeys, result, type)
             if (missedKeys.isNotEmpty()) {
                 val fetched = fetch(missedKeys).apply { toMap(result) }
-                multiLoad(fetched, type)
+                multiLoad(fetched, false, type)
             }
         }
     }

@@ -495,6 +495,39 @@ class MultiFieldCacheTest {
         }
     }
 
+
+    @Test
+    fun `키가 coldTime이면, load()로 로딩되지 않는다`() {
+        runBlocking {
+            // given
+            val cache = testCache(ttl = 100, coldTime = 1000L)
+            cache.getOrLoad("key", "field") { "preset" }
+            cache.evict("key")
+
+            // when
+            cache.load("key", "field") { "reloaded" }
+
+            // then
+            cache.get<String>("key", "field").equalsTo(null)
+        }
+    }
+
+    @Test
+    fun `키가 coldTime중이라도 load(forceLoad=true)로 강제로딩된다`() {
+        runBlocking {
+            // given
+            val cache = testCache(ttl = 100, coldTime = 1000L)
+            cache.getOrLoad("key", "field") { "preset" }
+            cache.evict("key")
+
+            // when
+            cache.load("key", "field", forceLoad = true) { "reloaded" }
+
+            // then
+            cache.get<String>("key", "field").equalsTo("reloaded")
+        }
+    }
+
     @Test
     fun `coldTime을 사용하지 않는 경우, coldTime이 적용되지 않는다`() {
         runBlocking {

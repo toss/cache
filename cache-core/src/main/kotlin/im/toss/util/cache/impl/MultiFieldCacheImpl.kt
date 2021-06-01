@@ -57,7 +57,7 @@ data class MultiFieldCacheImpl<TKey: Any>(
         }
     }
 
-    override suspend fun <T: Any> load(key: TKey, field: String, type: Type?, fetch: (suspend () -> T)) {
+    override suspend fun <T: Any> load(key: TKey, field: String, forceLoad: Boolean, type: Type?, fetch: (suspend () -> T)) {
         runWithContext(context) {
             runWithTimeout(options.operationTimeout.toMillis()) {
                 if (options.cacheMode == CacheMode.EVICTION_ONLY) {
@@ -65,7 +65,9 @@ data class MultiFieldCacheImpl<TKey: Any>(
                 } else {
                     try {
                         runOrRetry {
-                            loadToCache(key, field, type, fetch)
+                            if (forceLoad || !isColdTime(key)) {
+                                loadToCache(key, field, type, fetch)
+                            }
                         }
                     } catch (e: Throwable) {
                         options.cacheFailurePolicy.handle(
