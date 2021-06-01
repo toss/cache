@@ -20,6 +20,7 @@ import org.junit.jupiter.api.TestFactory
 import org.junit.jupiter.api.assertThrows
 import java.time.ZonedDateTime
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.CoroutineContext
 import kotlin.system.measureTimeMillis
 
@@ -32,7 +33,10 @@ class KeyValueCacheTest {
         applyTtlIfHit: Boolean = true,
         context: CoroutineContext? = null,
         mutexLock: MutexLock = LocalMutexLock(5000),
-        failurePolicy: CacheFailurePolicy = CacheFailurePolicy.ThrowException
+        failurePolicy: CacheFailurePolicy = CacheFailurePolicy.ThrowException,
+        pessimisticLock: Boolean = true,
+        optimisticLock: Boolean = true,
+        multiParallelism: Int = 100
     ) = KeyValueCacheImpl<String>(
         name = "dict_cache",
         keyFunction = Cache.KeyFunction { name, key -> "$name:{$key}" },
@@ -47,7 +51,10 @@ class KeyValueCacheTest {
             coldTime = coldTime,
             coldTimeUnit = TimeUnit.MILLISECONDS,
             applyTtlIfHit = applyTtlIfHit,
-            cacheFailurePolicy = failurePolicy
+            cacheFailurePolicy = failurePolicy,
+            enablePessimisticLock = pessimisticLock,
+            enableOptimisticLock = optimisticLock,
+            multiParallelism = multiParallelism
         )
     )
 
@@ -409,6 +416,55 @@ class KeyValueCacheTest {
     }
 
     @Test
+    fun `coldTime을 사용하는 경우, multiLoad에 coldTime이 적용된다`() {
+        runBlocking {
+            // given
+            val cache = testCache(ttl = 1000, coldTime = 1000L)
+            cache.getOrLoad("key1") { "preset1" }
+            cache.getOrLoad("key2") { "preset2" }
+
+            // when
+            cache.evict("key1")
+            cache.evict("key2")
+            cache.multiLoad(
+                mapOf(
+                    "key1" to "reloaded1",
+                    "key2" to "reloaded2",
+                )
+            )
+
+            // then
+            cache.get<String>("key1").equalsTo(null)
+            cache.get<String>("key2").equalsTo(null)
+        }
+    }
+
+    @Test
+    fun `coldTime을 사용하는 경우, multiLoad(forceLoad=true)시 강제 로딩된다`() {
+        runBlocking {
+            // given
+            val cache = testCache(ttl = 1000, coldTime = 1000L)
+            cache.getOrLoad("key1") { "preset1" }
+            cache.getOrLoad("key2") { "preset2" }
+
+            // when
+            cache.evict("key1")
+            cache.evict("key2")
+            cache.multiLoad(
+                mapOf(
+                    "key1" to "reloaded1",
+                    "key2" to "reloaded2",
+                ),
+                forceLoad = true
+            )
+
+            // then
+            cache.get<String>("key1").equalsTo("reloaded1")
+            cache.get<String>("key2").equalsTo("reloaded2")
+        }
+    }
+
+    @Test
     fun `evictionOnly 모드일때도 evict이 작동한다`() {
         runBlocking {
             // given
@@ -713,6 +769,53 @@ class KeyValueCacheTest {
     }
 
     @Test
+    fun `락 옵션을 끄면, 락 실행 시 예외가 발생된다`() {
+        val key = "key"
+
+        assertThrows<NotSupportOptimisticLockException> {
+            runBlocking {
+                val cache = testCache(ttl = 10000, optimisticLock = false)
+                cache.optimisticLockForLoad<String>(key)
+            }
+        }
+
+        assertThrows<NotSupportPessimisticLockException> {
+            runBlocking {
+                val cache = testCache(ttl = 10000, pessimisticLock = false)
+                cache.pessimisticLockForLoad<String>(key)
+            }
+        }
+    }
+
+    @Test
+    fun `pessimistic lock 옵션을 끄면, lockForLoad시 optimistic lock으로 동작한다`() {
+        val key = "key"
+
+        runBlocking {
+            val cache = testCache(ttl = 10000, pessimisticLock = false)
+            val lock = cache.lockForLoad<String>(key)
+            cache.load(key) { "VER0" }
+            cache.get<String>(key) equalsTo "VER0"
+            lock.load("VER1")
+            cache.get<String>(key) equalsTo null
+        }
+    }
+
+    @Test
+    fun `모든 lock 옵션을 끄면, lockForLoad를 사용할 수 있지만, lock이 적용되지 않는다`() {
+        val key = "key"
+
+        runBlocking {
+            val cache = testCache(ttl = 10000, pessimisticLock = false, optimisticLock = false)
+            val lock = cache.lockForLoad<String>(key)
+            cache.load(key) { "VER0" }
+            cache.get<String>(key) equalsTo "VER0"
+            lock.load("VER1")
+            cache.get<String>(key) equalsTo "VER1"
+        }
+    }
+
+    @Test
     fun `낙관적 락으로 캐시에 값을 기록한다`() {
         runBlocking {
             val key = "key"
@@ -924,7 +1027,7 @@ class KeyValueCacheTest {
     @Test
     fun `multiGetOrLoad은 캐시 데이터를 병렬로 조회하고 로딩한다`() {
         runBlocking {
-            val cache = testCache(ttl = 10000)
+            val cache = testCache(ttl = 10000, multiParallelism = 100)
 
             val elapsedTime = measureTimeMillis {
                 cache.multiGetOrLoad(
@@ -936,6 +1039,52 @@ class KeyValueCacheTest {
             }
 
             println("1000 getOrLoad, $elapsedTime ms elapsed")
+            assertThat(elapsedTime).isLessThan(2000)
+        }
+    }
+
+    @Test
+    fun `lock 옵션을 켜면 multiGetOrLoad은 n번의 fetch를 실행한다`() {
+        runBlocking {
+            val fetchCount = AtomicLong()
+            val cache = testCache(ttl = 10000, pessimisticLock = false, optimisticLock = true, multiParallelism = 100)
+
+            val elapsedTime = measureTimeMillis {
+                cache.multiGetOrLoad(
+                    (1..1000).map { "$it" }.toSet()
+                ) { keys ->
+                    println("fetch: $keys")
+                    fetchCount.incrementAndGet()
+                    delay(100)
+                    keys.map { it to "v$it" }.toMap()
+                } equalsTo (1..1000).map { "$it" to "v$it" }.toMap()
+            }
+
+            println("1000 getOrLoad, $elapsedTime ms elapsed")
+            assertThat(fetchCount.get()).isEqualTo(1000)
+            assertThat(elapsedTime).isLessThan(2000)
+        }
+    }
+
+    @Test
+    fun `lock 옵션을 모두 끄면 multiGetOrLoad은 한번의 fetch만 실행한다`() {
+        runBlocking {
+            val fetchCount = AtomicLong()
+            val cache = testCache(ttl = 10000, pessimisticLock = false, optimisticLock = false, multiParallelism = 4)
+
+            val elapsedTime = measureTimeMillis {
+                cache.multiGetOrLoad(
+                    (1..1000).map { "$it" }.toSet()
+                ) { keys ->
+                    println("fetch: $keys")
+                    fetchCount.incrementAndGet()
+                    delay(100)
+                    keys.map { it to "v$it" }.toMap()
+                } equalsTo (1..1000).map { "$it" to "v$it" }.toMap()
+            }
+
+            println("1000 getOrLoad, $elapsedTime ms elapsed")
+            assertThat(fetchCount.get()).isEqualTo(1)
             assertThat(elapsedTime).isLessThan(2000)
         }
     }

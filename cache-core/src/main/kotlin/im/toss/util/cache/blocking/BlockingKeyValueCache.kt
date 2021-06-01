@@ -40,6 +40,12 @@ class BlockingKeyValueCache<TKey: Any>(val cache: KeyValueCache<TKey>) {
         cache.lockForLoad<T>(key, timeout).blocking()
     }
 
+    @Throws(NotSupportPessimisticLockException::class)
+    inline fun <reified T:Any> pessimisticLockForLoad(key: TKey, timeout: Long = -1): BlockingCacheValueLoader<T> = runBlocking {
+        cache.pessimisticLockForLoad<T>(key).blocking()
+    }
+
+    @Throws(NotSupportOptimisticLockException::class)
     inline fun <reified T:Any> optimisticLockForLoad(key: TKey): BlockingCacheValueLoader<T> = runBlocking {
         cache.optimisticLockForLoad<T>(key).blocking()
     }

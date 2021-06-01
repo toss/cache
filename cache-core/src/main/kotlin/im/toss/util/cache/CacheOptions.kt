@@ -38,6 +38,15 @@ data class CacheOptions(
 
     @field:JsonProperty("run-with-isolated-context")
     var runWithIsolatedContext: Boolean = false,
+
+    @field:JsonProperty("enable-pessimistic-lock")
+    var enablePessimisticLock: Boolean = true,
+
+    @field:JsonProperty("enable-optimistic-lock")
+    var enableOptimisticLock: Boolean = true,
+
+    @field:JsonProperty("multi-parallelism")
+    var multiParallelism: Int = 4,
 )
 
 fun cacheOptions(
@@ -51,7 +60,10 @@ fun cacheOptions(
     lockTimeout: Long? = null,
     lockTimeoutTimeUnit: TimeUnit? = null,
     cacheFailurePolicy: CacheFailurePolicy? = null,
-    isolationByType: Boolean? = null
+    isolationByType: Boolean? = null,
+    enableOptimisticLock: Boolean? = null,
+    enablePessimisticLock: Boolean? = null,
+    multiParallelism: Int? = null
 ): CacheOptions {
     return CacheOptions(
         version = version ?: "0001",
@@ -61,6 +73,9 @@ fun cacheOptions(
         coldTime = Duration.ofMillis((coldTimeUnit?:TimeUnit.SECONDS).toMillis(coldTime ?: -1L)),
         lockTimeout = Duration.ofMillis((lockTimeoutTimeUnit?:TimeUnit.SECONDS).toMillis(lockTimeout ?: 30L)),
         cacheFailurePolicy = cacheFailurePolicy ?: CacheFailurePolicy.ThrowException,
-        isolationByType = isolationByType ?: false
+        isolationByType = isolationByType ?: false,
+        enablePessimisticLock = enablePessimisticLock ?: true,
+        enableOptimisticLock = enableOptimisticLock ?: true,
+        multiParallelism = multiParallelism ?: 4
     )
 }

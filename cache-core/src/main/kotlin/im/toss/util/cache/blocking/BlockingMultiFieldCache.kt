@@ -2,6 +2,8 @@ package im.toss.util.cache.blocking
 
 import im.toss.util.cache.CacheMode
 import im.toss.util.cache.MultiFieldCache
+import im.toss.util.cache.NotSupportOptimisticLockException
+import im.toss.util.cache.NotSupportPessimisticLockException
 import im.toss.util.concurrent.lock.MutexLock
 import kotlinx.coroutines.runBlocking
 
@@ -41,6 +43,12 @@ class BlockingMultiFieldCache<TKey: Any>(val cache: MultiFieldCache<TKey>) {
         cache.lockForLoad<T>(key, field, timeout).blocking()
     }
 
+    @Throws(NotSupportPessimisticLockException::class)
+    inline fun <reified T:Any> pessimisticLockForLoad(key: TKey, field: String, timeout: Long = -1): BlockingCacheValueLoader<T> = runBlocking {
+        cache.pessimisticLockForLoad<T>(key, field).blocking()
+    }
+
+    @Throws(NotSupportOptimisticLockException::class)
     inline fun <reified T:Any> optimisticLockForLoad(key: TKey, field: String): BlockingCacheValueLoader<T> = runBlocking {
         cache.optimisticLockForLoad<T>(key, field).blocking()
     }
