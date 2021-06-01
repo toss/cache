@@ -20,6 +20,7 @@ import org.junit.jupiter.api.TestFactory
 import org.junit.jupiter.api.assertThrows
 import java.time.ZonedDateTime
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.CoroutineContext
 import kotlin.system.measureTimeMillis
 
@@ -35,6 +36,7 @@ class KeyValueCacheTest {
         failurePolicy: CacheFailurePolicy = CacheFailurePolicy.ThrowException,
         pessimisticLock: Boolean = true,
         optimisticLock: Boolean = true,
+        multiParallelism: Int = 100
     ) = KeyValueCacheImpl<String>(
         name = "dict_cache",
         keyFunction = Cache.KeyFunction { name, key -> "$name:{$key}" },
@@ -52,6 +54,7 @@ class KeyValueCacheTest {
             cacheFailurePolicy = failurePolicy,
             enablePessimisticLock = pessimisticLock,
             enableOptimisticLock = optimisticLock,
+            multiParallelism = multiParallelism
         )
     )
 
@@ -975,7 +978,7 @@ class KeyValueCacheTest {
     @Test
     fun `multiGetOrLoad은 캐시 데이터를 병렬로 조회하고 로딩한다`() {
         runBlocking {
-            val cache = testCache(ttl = 10000)
+            val cache = testCache(ttl = 10000, multiParallelism = 100)
 
             val elapsedTime = measureTimeMillis {
                 cache.multiGetOrLoad(
@@ -987,6 +990,52 @@ class KeyValueCacheTest {
             }
 
             println("1000 getOrLoad, $elapsedTime ms elapsed")
+            assertThat(elapsedTime).isLessThan(2000)
+        }
+    }
+
+    @Test
+    fun `lock 옵션을 켜면 multiGetOrLoad은 n번의 fetch를 실행한다`() {
+        runBlocking {
+            val fetchCount = AtomicLong()
+            val cache = testCache(ttl = 10000, pessimisticLock = false, optimisticLock = true, multiParallelism = 100)
+
+            val elapsedTime = measureTimeMillis {
+                cache.multiGetOrLoad(
+                    (1..1000).map { "$it" }.toSet()
+                ) { keys ->
+                    println("fetch: $keys")
+                    fetchCount.incrementAndGet()
+                    delay(100)
+                    keys.map { it to "v$it" }.toMap()
+                } equalsTo (1..1000).map { "$it" to "v$it" }.toMap()
+            }
+
+            println("1000 getOrLoad, $elapsedTime ms elapsed")
+            assertThat(fetchCount.get()).isEqualTo(1000)
+            assertThat(elapsedTime).isLessThan(2000)
+        }
+    }
+
+    @Test
+    fun `lock 옵션을 모두 끄면 multiGetOrLoad은 한번의 fetch만 실행한다`() {
+        runBlocking {
+            val fetchCount = AtomicLong()
+            val cache = testCache(ttl = 10000, pessimisticLock = false, optimisticLock = false, multiParallelism = 4)
+
+            val elapsedTime = measureTimeMillis {
+                cache.multiGetOrLoad(
+                    (1..1000).map { "$it" }.toSet()
+                ) { keys ->
+                    println("fetch: $keys")
+                    fetchCount.incrementAndGet()
+                    delay(100)
+                    keys.map { it to "v$it" }.toMap()
+                } equalsTo (1..1000).map { "$it" to "v$it" }.toMap()
+            }
+
+            println("1000 getOrLoad, $elapsedTime ms elapsed")
+            assertThat(fetchCount.get()).isEqualTo(1)
             assertThat(elapsedTime).isLessThan(2000)
         }
     }

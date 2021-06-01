@@ -22,6 +22,8 @@ abstract class KeyValueCache<TKey: Any> {
     abstract suspend fun <T: Any> optimisticLockForLoad(key: TKey, type: Type?): CacheValueLoader<T>
 
     abstract suspend fun <T: Any> multiGet(keys: Set<TKey>, type: Type?): Map<TKey, T?>
+    abstract suspend fun <T: Any> multiGetTo(keys: Set<TKey>, missedKeys: MutableSet<TKey>, result: MutableMap<TKey, T>, type: Type?): Map<TKey, T>
+    abstract suspend fun <T: Any> multiLoad(keyValues: Map<TKey, T>, type: Type?)
     abstract suspend fun <T: Any> multiGetOrLoad(keys: Set<TKey>, type: Type?, fetch: (suspend (Set<TKey>) -> Map<TKey, T>)): Map<TKey, T>
 
     @Throws(NotSupportPessimisticLockException::class)
@@ -36,5 +38,7 @@ abstract class KeyValueCache<TKey: Any> {
     suspend inline fun <reified T: Any> load(key: TKey, noinline fetch: (suspend () -> T)) = load(key, getType<T>(), fetch)
 
     suspend inline fun <reified T: Any> multiGet(keys: Set<TKey>): Map<TKey, T?> = multiGet(keys, getType<T>())
+    suspend inline fun <reified T: Any> multiGetTo(keys: Set<TKey>, missedKeys: MutableSet<TKey>, result: MutableMap<TKey, T>): Map<TKey, T> = multiGetTo(keys, missedKeys, result, getType<T>())
+    suspend inline fun <reified T: Any> multiLoad(keyValues: Map<TKey, T>) = multiLoad(keyValues, getType<T>())
     suspend inline fun <reified T: Any> multiGetOrLoad(keys: Set<TKey>, noinline fetch: (suspend (Set<TKey>) -> Map<TKey, T>)): Map<TKey, T> = multiGetOrLoad(keys, getType<T>(), fetch)
 }

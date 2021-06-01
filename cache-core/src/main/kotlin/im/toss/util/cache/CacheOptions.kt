@@ -44,6 +44,9 @@ data class CacheOptions(
 
     @field:JsonProperty("enable-optimistic-lock")
     var enableOptimisticLock: Boolean = true,
+
+    @field:JsonProperty("multi-parallelism")
+    var multiParallelism: Int = 4,
 )
 
 fun cacheOptions(
@@ -59,7 +62,8 @@ fun cacheOptions(
     cacheFailurePolicy: CacheFailurePolicy? = null,
     isolationByType: Boolean? = null,
     enableOptimisticLock: Boolean? = null,
-    enablePessimisticLock: Boolean? = null
+    enablePessimisticLock: Boolean? = null,
+    multiParallelism: Int? = null
 ): CacheOptions {
     return CacheOptions(
         version = version ?: "0001",
@@ -71,6 +75,7 @@ fun cacheOptions(
         cacheFailurePolicy = cacheFailurePolicy ?: CacheFailurePolicy.ThrowException,
         isolationByType = isolationByType ?: false,
         enablePessimisticLock = enablePessimisticLock ?: true,
-        enableOptimisticLock = enableOptimisticLock ?: true
+        enableOptimisticLock = enableOptimisticLock ?: true,
+        multiParallelism = multiParallelism ?: 4
     )
 }
