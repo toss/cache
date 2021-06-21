@@ -202,7 +202,7 @@ data class MultiFieldCacheImpl<TKey: Any>(
                         }
                         else -> {
                             metrics.incrementHitCount()
-                            if (options.applyTtlIfHit && options.ttl.toMillis() > 0L) {
+                            if (options.isApplyTtlIfHit()) {
                                 repository.expire(keys.key(key), options.ttl.toMillis(), TimeUnit.MILLISECONDS)
                             }
                             cached
@@ -245,7 +245,7 @@ data class MultiFieldCacheImpl<TKey: Any>(
                             }
                             else -> {
                                 metrics.incrementHitCount()
-                                if (options.applyTtlIfHit && options.ttl.toMillis() > 0L) {
+                                if (options.isApplyTtlIfHit()) {
                                     repository.expire(keys.key(key), options.ttl.toMillis(), TimeUnit.MILLISECONDS)
                                 }
                                 cached
@@ -289,7 +289,7 @@ data class MultiFieldCacheImpl<TKey: Any>(
                             }
                             else -> {
                                 metrics.incrementHitCount()
-                                if (options.applyTtlIfHit && options.ttl.toMillis() > 0L) {
+                                if (options.isApplyTtlIfHit()) {
                                     repository.expire(keys.key(key), options.ttl.toMillis(), TimeUnit.MILLISECONDS)
                                 }
                                 ResultGetOrLockForLoad(cached)
