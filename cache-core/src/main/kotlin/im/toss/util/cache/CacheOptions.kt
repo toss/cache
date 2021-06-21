@@ -3,6 +3,7 @@ package im.toss.util.cache
 import com.fasterxml.jackson.annotation.JsonProperty
 import java.time.Duration
 import java.util.concurrent.TimeUnit
+import kotlin.random.Random
 
 data class CacheOptions(
     @field:JsonProperty("version")
@@ -16,6 +17,9 @@ data class CacheOptions(
 
     @field:JsonProperty("apply-ttl-if-hit")
     var applyTtlIfHit: Boolean = true,
+
+    @field:JsonProperty("apply-ttl-if-hit-ratio")
+    var applyTtlIfHitRatio: Float = 1.0f,
 
     @field:JsonProperty("cold-time")
     var coldTime: Duration = Duration.ofSeconds(-1L),
@@ -48,6 +52,12 @@ data class CacheOptions(
     @field:JsonProperty("multi-parallelism")
     var multiParallelism: Int = 4,
 )
+
+fun CacheOptions.isApplyTtlIfHit(): Boolean {
+    return applyTtlIfHit && ttl.toMillis() > 0L && isProbability(applyTtlIfHitRatio)
+}
+
+fun isProbability(n: Float): Boolean = Random.nextFloat() < n
 
 fun cacheOptions(
     version: String? = null,
