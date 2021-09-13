@@ -34,7 +34,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-reactive:${Versions.kotlinCoroutinesVersion}")
 
     implementation("io.github.microutils:kotlin-logging:1.5.9")
-    implementation("io.lettuce:lettuce-core:5.2.1.RELEASE")
+    implementation("io.lettuce:lettuce-core:5.3.7.RELEASE")
     implementation("io.micrometer:micrometer-core:1.1.9")
     implementation("com.esotericsoftware:kryo:4.0.2")
     implementation("com.esotericsoftware.kryo:kryo5:5.0.4")
