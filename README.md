@@ -1,5 +1,6 @@
 # cache
 
+[![status-DEPRECATED](https://img.shields.io/badge/status-DEPRECATED-red)](https://github.com/toss/cache)
 [![stability-experimental](https://img.shields.io/badge/stability-experimental-orange.svg)](https://github.com/toss/cache)
 [![Jitpack](https://jitpack.io/v/toss/cache.svg)](https://jitpack.io/#toss/cache)
 [![Build Status](https://travis-ci.org/toss/cache.svg?branch=master)](https://travis-ci.org/toss/cache)
@@ -7,6 +8,10 @@
 
 
 Cache library for Kotlin/JVM
+
+## DEPRECATED.
+
+*This project has reached the end of its development as cache of Toss. Feel free to browse the code, but please use another way to cache your datas.*
 
 ## Maintainers
 
